@@ -243,8 +243,8 @@ async function inBatches(items, size, fn) {
     check('장애물 설치 (호스트와 폰 개수 일치, 1인 한도 지킴)', hostObs === placed && perOwner <= OBS,
       { placed, want, hostObs, attempts, hostRejects, noRoomForKind: noRoom, maxPerPlayer: perOwner });
     report.obstacles = { placed, want, attempts, hostRejects, noRoom };
-    await phones[3].bringToFront();
-    await phones[3].screenshot({ path: path.join(OUT, '05-phone-obstacles.png') });
+    await phones[Math.min(3, phones.length - 1)].bringToFront();
+    await phones[Math.min(3, phones.length - 1)].screenshot({ path: path.join(OUT, '05-phone-obstacles.png') });
   }
 
   // ---------- 복구 시나리오 (--resilience) ----------
@@ -321,6 +321,8 @@ async function inBatches(items, size, fn) {
       if (!(await pg.evaluate(() => PLB.st.ready))) await pg.click('#pReady');
     });
     await host.waitForFunction(n => PLB.st.players.filter(p => p.name && p.ready).length === n, NALL, { timeout: 30000 });
+    // 패널은 다음 프레임에 다시 그려지므로 화면 숫자가 따라올 때까지 기다린다
+    await host.waitForFunction(n => document.getElementById('cPlayers').textContent === String(n) && document.getElementById('cReady').textContent === String(n), NALL, { timeout: 5000 }).catch(() => {});
     const counts = await host.evaluate(() => [document.getElementById('cPlayers').textContent, document.getElementById('cReady').textContent]);
     check(`[${gi + 1}판] 전원 준비 표시`, counts[0] === String(NALL) && counts[1] === String(NALL), counts);
     await host.bringToFront();
@@ -349,8 +351,8 @@ async function inBatches(items, size, fn) {
     const fps = g.stats.frames / Math.max(1, wall);
     report.games.push({ gameSeconds: +g.t.toFixed(1), wallSeconds: +wall.toFixed(1), seed: g.seed, sudden: g.sudden, final: g.final, hostFps: +fps.toFixed(1), avgStepMs: +(g.stats.stepMs / Math.max(1, g.stats.steps)).toFixed(3), slowFrames: g.stats.slowFrames });
     log('game', gi + 1, JSON.stringify(report.games[report.games.length - 1]));
-    await phones[5].bringToFront();
-    await phones[5].screenshot({ path: path.join(OUT, `09-phone-result-${gi + 1}.png`) });
+    await phones[Math.min(5, phones.length - 1)].bringToFront();
+    await phones[Math.min(5, phones.length - 1)].screenshot({ path: path.join(OUT, `09-phone-result-${gi + 1}.png`) });
     await host.bringToFront();
     await host.evaluate(() => { PLB.st.stats = { frames: 0, slowFrames: 0, maxSteps: 0, stepMs: 0, steps: 0 }; });
     if (gi < GAMES - 1) {
