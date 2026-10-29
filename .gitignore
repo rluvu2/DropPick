@@ -1,0 +1,5 @@
+node_modules/
+test/out/
+.DS_Store
+# 원본 압축 파일 (풀어서 커밋함)
+*.zip

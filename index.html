@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>핀볼 사다리</title>
+<meta name="description" content="이름 글자가 그대로 떨어지는 핀볼형 사다리타기. 큰 화면에서 방을 열고 폰으로 QR을 찍어 참가하세요.">
+<meta name="theme-color" content="#140F26">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23140F26'/%3E%3Ccircle cx='16' cy='11' r='5' fill='%23FFB547'/%3E%3Cpath d='M4 24h7M13 24h6M21 24h7' stroke='%23FF3B5C' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+
+<template id="tHost">
+  <div class="host">
+    <div class="stage">
+      <canvas id="board" aria-label="게임 보드"></canvas>
+      <div id="banner" class="banner" role="status"></div>
+      <div id="overlay" class="overlay hidden">
+        <div class="result-card">
+          <h2>결과</h2>
+          <ul id="finalList" class="results final-list"></ul>
+          <p id="leftover" class="hint hidden"></p>
+          <div class="row">
+            <button id="againBtn" class="btn primary" type="button">같은 사람들로 다시 하기</button>
+            <button id="copyBtn" class="btn" type="button">결과 복사</button>
+            <button id="resetBtn" class="btn ghost" type="button">처음부터</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <section id="hSetup" class="pane">
+        <div>
+          <h1 class="title">핀볼 사다리</h1>
+          <p class="lede">이름이 글자 모양 그대로 떨어져요. 바닥의 레이저 칸을 통과하면 그 칸이 내 결과가 됩니다.</p>
+        </div>
+        <label class="field">
+          <span class="field-label">바닥 칸 이름</span>
+          <textarea id="labels" spellcheck="false" placeholder="줄바꿈이나 쉼표로 구분&#10;꽝*3 처럼 쓰면 3칸"></textarea>
+          <span class="hint"><span id="labelsHint"></span> 줄바꿈이나 쉼표로 구분하고, 꽝*3처럼 쓰면 같은 칸을 여러 개 만들어요. 최대 30칸.</span>
+        </label>
+        <div class="field">
+          <span class="field-label">1인당 장애물</span>
+          <div class="stepper">
+            <button id="obsMinus" type="button" aria-label="장애물 줄이기">−</button>
+            <output id="obsOut">2</output>
+            <button id="obsPlus" type="button" aria-label="장애물 늘리기">+</button>
+          </div>
+          <span class="hint">참가자가 폰으로 벽돌, 트램펄린, 범퍼를 놓을 수 있어요. 45초가 지나면 모두 부서져요.</span>
+        </div>
+        <div class="field checks">
+          <label class="check"><input id="blind" type="checkbox"> 칸 이름 가리기 (통과한 칸만 공개)</label>
+        </div>
+        <p id="setupErr" class="err" role="alert"></p>
+        <div class="actions">
+          <button id="openRoom" class="btn primary big" type="button">방 열기</button>
+          <button id="cancelEdit" class="link hidden" type="button">바꾸지 않고 대기실로</button>
+          <details id="joinbox" class="joinbox">
+            <summary>폰으로 참가하기(코드 입력)</summary>
+            <form id="joinForm" class="addname">
+              <input id="joinCode" maxlength="4" placeholder="방코드 4자리" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="방코드">
+              <button class="btn" type="submit">참가</button>
+            </form>
+          </details>
+        </div>
+      </section>
+
+      <section id="hLobby" class="pane hidden">
+        <div class="lobby-head">
+          <h1 class="title small">대기실</h1>
+          <div class="head-tools"><span id="net" class="net warn">서버에 연결하는 중</span></div>
+        </div>
+        <div class="join">
+          <div class="qr-box"><canvas id="qr" width="300" height="300" aria-label="참가 QR 코드"></canvas></div>
+          <div class="join-info">
+            <span class="code-label">방코드</span>
+            <span id="code" class="code">----</span>
+            <span id="joinUrl" class="hint"></span>
+          </div>
+        </div>
+        <div class="counts">
+          <span><b id="cPlayers">0</b>명 참가</span>
+          <span><b id="cReady">0</b>명 준비</span>
+          <span id="cSlotsWrap"><b id="cSlots">0</b>칸</span>
+        </div>
+        <ul id="plist" class="plist"></ul>
+        <form id="addForm" class="addname">
+          <input id="addName" maxlength="20" placeholder="폰 없는 사람 이름" autocomplete="off" aria-label="폰 없는 사람 이름">
+          <button class="btn" type="submit">추가</button>
+        </form>
+        <p class="hint">폰 없는 사람은 보드에서 이름을 끌어 출발 위치를 바꿀 수 있어요.</p>
+        <p id="lobbyErr" class="err" role="alert"></p>
+        <div class="actions">
+          <button id="startBtn" class="btn primary big" type="button">시작</button>
+          <button id="editSetup" class="link" type="button">설정 바꾸기</button>
+        </div>
+      </section>
+
+      <section id="hRun" class="pane hidden">
+        <div class="lobby-head">
+          <h1 id="runTitle" class="title small">진행 중</h1>
+          <div class="head-tools">
+            <button id="camBtn" class="icon-btn" type="button">따라가기</button>
+            <button id="soundBtn" class="icon-btn" type="button">소리 켬</button>
+          </div>
+        </div>
+        <div class="clock-row"><span id="clock" class="clock">0.0</span><span class="clock-unit">초</span></div>
+        <p id="runSub" class="sub">남은 이름 0 / 남은 칸 0</p>
+        <ol id="results" class="results"></ol>
+        <div class="actions">
+          <button id="abortBtn" class="link danger" type="button">중단하고 대기실로</button>
+        </div>
+      </section>
+    </aside>
+  </div>
+  <div id="toasts" aria-live="polite"></div>
+</template>
+
+<template id="tPhone">
+  <div class="phone">
+    <header class="p-head">
+      <span id="pCode" class="p-code">----</span>
+      <span id="pNet" class="net warn">연결 중</span>
+      <span id="pMe" class="p-me hidden"><span id="pMeName"></span></span>
+    </header>
+    <main id="pMain">
+      <section id="pConnecting" class="p-center">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="pConnMsg">방에 연결하는 중…</p>
+      </section>
+
+      <section id="pError" class="p-center hidden">
+        <h1 class="title small">연결할 수 없어요</h1>
+        <p id="pErrMsg" class="hint"></p>
+        <button id="pRetry" class="btn primary" type="button">다시 시도</button>
+      </section>
+
+      <section id="pName" class="p-center name-form hidden">
+        <h1 class="title small">이름 정하기</h1>
+        <form id="pNameForm" class="field">
+          <label class="field-label" for="pNameInput">큰 화면에 떨어질 이름 (8글자까지)</label>
+          <input id="pNameInput" maxlength="16" autocomplete="nickname" enterkeyhint="go" spellcheck="false">
+          <p id="pNameErr" class="err" role="alert"></p>
+          <button id="pNameBtn" class="btn primary big" type="submit">들어가기</button>
+        </form>
+        <div class="tips">
+          <b>이렇게 해요</b>
+          <ul>
+            <li>이름이 글자 모양 그대로 떨어져요.</li>
+            <li>출발 위치를 고르고, 장애물을 놓아 남의 길을 바꿔보세요.</li>
+            <li>바닥의 레이저 칸을 통과하면 그 칸이 내 결과예요.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="pLobby" class="p-lobby hidden">
+        <div id="pTabs" class="p-tabs">
+          <button data-tab="drop" class="on" type="button">출발 위치</button>
+          <button data-tab="obs" type="button">장애물 (0/0)</button>
+        </div>
+        <canvas id="pCanvas" class="p-canvas" aria-label="보드"></canvas>
+        <div id="pDropTools" class="p-tools">
+          <p class="hint">보드를 좌우로 끌거나 탭해서 출발 위치를 정하세요. 같은 자리를 고르면 위로 쌓여요.</p>
+          <div id="pNudge" class="nudge">
+            <button id="pLeft" class="btn" type="button" aria-label="왼쪽으로">◀ 왼쪽</button>
+            <button id="pRight" class="btn" type="button" aria-label="오른쪽으로">오른쪽 ▶</button>
+          </div>
+        </div>
+        <div id="pObsTools" class="p-tools hidden">
+          <div id="pKinds" class="kinds">
+            <button data-kind="block" class="on" type="button"><i class="block"></i>벽돌</button>
+            <button data-kind="tramp" type="button"><i class="tramp"></i>트램펄린</button>
+            <button data-kind="bumper" type="button"><i class="bumper"></i>범퍼</button>
+          </div>
+          <p id="pObsStatus" class="status" role="status"></p>
+          <div class="place-row">
+            <button id="pRotL" class="btn" type="button" aria-label="왼쪽으로 15도 돌리기">⟲</button>
+            <button id="pRotR" class="btn" type="button" aria-label="오른쪽으로 15도 돌리기">⟳</button>
+            <button id="pPlace" class="btn primary" type="button">여기에 설치</button>
+          </div>
+          <p class="hint">빈 곳을 탭하면 그 자리로, 끌면 끈 만큼 움직여요. 장애물은 3번 맞으면 사라져요.</p>
+          <ul id="pMyObs" class="myobs"></ul>
+        </div>
+        <button id="pReady" class="btn big ready" type="button">준비 완료</button>
+      </section>
+
+      <section id="pRun" class="p-center hidden">
+        <span id="pRunMe" class="me-chip"></span>
+        <h1 class="title small">큰 화면을 보세요</h1>
+        <p id="pRunMsg" class="hint">이름이 떨어지는 중이에요</p>
+      </section>
+
+      <section id="pDone" class="p-center hidden">
+        <span id="pDoneMe" class="me-chip"></span>
+        <div class="result-slot">
+          <span class="hint">내 결과</span>
+          <p id="pLabel" class="big-label"></p>
+        </div>
+        <p id="pDoneMsg" class="hint"></p>
+      </section>
+    </main>
+  </div>
+  <div id="toasts" aria-live="polite"></div>
+</template>
+
+<script src="https://cdn.jsdelivr.net/npm/planck@1.4.2/dist/planck.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js"></script>
+<script src="src/sim.js"></script>
+<script src="src/glyph.js"></script>
+<script src="src/render.js"></script>
+<script src="src/net.js"></script>
+<script src="src/host.js"></script>
+<script src="src/player.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
