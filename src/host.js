@@ -30,7 +30,7 @@
     acc: 0, countStart: 0, lastCount: 0, doneAt: 0,
     follow: true, cam: null, fx: new Render.Fx(), T: null, panelDirty: true,
     speed: 1, trails: new Map(), stageSeen: 0, pack: null, focusY: null, inset: false, insetSince: 0, special: new Set(), manual: null, liveAt: 0, progAt: 0, mmRect: null,
-    zoomW: null, leaderId: null, goAt: 0, ovT: null, hudW: 0,
+    zoomW: null, leaderId: null, goAt: 0, hudW: 0, folded: false, lookRect: null, panelSpace: -1,
     startArmed: false, abortArmed: false, drag: null, stats: { frames: 0, slowFrames: 0, maxSteps: 0, stepMs: 0, steps: 0 },
   };
 
@@ -296,9 +296,9 @@
     st.game = null; st.acc = 0;
     st.countStart = performance.now(); st.lastCount = 0;
     st.fx = new Render.Fx(st.map.F);
-    // 카메라는 전체 지도의 첫 단(출발 지점)에서 시작해 출발 지점으로 다가간다
-    const cv = $('board'), bw = cv.clientWidth, bh = cv.clientHeight, T0 = st.ovT;
-    st.cam = T0 ? { x0: T0.mx(0), x1: T0.mx(bw), y0: T0.my(0), y1: T0.my(bh) } : null;
+    // 카메라는 시작 전에 보던 곳에서 출발 지점으로 다가간다
+    look.tour = null;
+    st.cam = st.lookRect ? Object.assign({}, st.lookRect) : null;
     st.manual = null; st.zoomW = null; st.leaderId = null; st.goAt = 0;
     st.trails = new Map(); st.stageSeen = 0; st.pack = null; st.focusY = null; st.inset = false;
     const token = ++st.runToken;
@@ -412,6 +412,7 @@
   // 대기실로: 준비만 초기화하고 위치·장애물은 유지 (clearObstacles면 장애물도 지움)
   function backToLobby(clearObstacles) {
     st.runToken++;
+    resetLook();
     st.game = null; st.parts = []; st.lastResults = {};
     st.phase = 'lobby';
     hideOverlay();
@@ -430,9 +431,15 @@
   function showPanel() {
     show('hSetup', st.phase === 'setup');
     show('hLobby', st.phase === 'lobby');
-    // 진행 중에는 오른쪽 판을 접고 보드가 화면을 다 쓴다 (시계·순위는 보드 위에 겹침)
-    document.querySelector('.host').classList.toggle('racing', racing());
+    // 보드는 늘 화면 전체. 시작 전에는 설정·대기실 창이 그 위에 떠 있고(접을 수 있음), 진행 중에는 창 대신 시계·순위를 겹친다
+    const host = document.querySelector('.host');
+    host.classList.toggle('racing', racing());
+    host.classList.toggle('folded', st.folded);
     show('hud', racing());
+    show('panelPill', st.folded && !racing());
+    show('lookTools', !racing());
+    renderPill();
+    renderLookTools();
     if (!racing()) { $('winFx').classList.add('hidden'); $('stageTitle').classList.remove('go'); }
     $('openRoom').textContent = st.roomOpen ? '적용' : '방 열기';
     show('cancelEdit', st.roomOpen);
@@ -536,6 +543,7 @@
       ul.appendChild(li);
     }
     if (!st.startArmed) $('startBtn').textContent = '시작';
+    renderPill();
   }
 
   function renderRunPanel() {
@@ -704,26 +712,106 @@
       if (hudW) host.style.setProperty('--hud-w', hudW + 'px'); else host.style.removeProperty('--hud-w');
     }
     if (racing()) drawRace(ctx, w, h, map, clock, now, dt);
-    else drawLobby(ctx, w, h, map, clock);
+    else drawLobby(ctx, w, h, map, clock, dt, now);
   }
 
-  // 설정·대기실: 코스 전체를 몇 단으로 나란히 (장애물 설치는 폰에서 하니 1구간만 키울 필요 없음). 이름·장애물은 첫 단에 있다
-  function drawLobby(ctx, w, h, map, clock) {
+  // ---------- 시작 전: 코스 둘러보기 ----------
+  // 보드 폭을 꽉 채운 큰 화면으로 코스의 한 부분을 보여준다(설정 창에 가리지 않는 곳에).
+  // 왼쪽 미니맵을 누르거나 끌기, 휠(굴리기)·Ctrl+휠(확대·축소)·빈 곳 끌기로 원하는 곳을 보고,
+  // '코스 둘러보기'는 출발 지점에서 결승선까지 천천히 내려갔다가 돌아온다. 이름·장애물은 출발 지점에 있다.
+  // look.cy·cx·zoomW는 목표, look.cur는 실제로 보이는 값(부드럽게 따라감). cy가 null이면 출발 지점
+  const look = { cy: null, cx: null, zoomW: null, cur: null, tour: null, drag: null, geo: null };
+  function resetLook() { look.cy = null; look.cx = null; look.zoomW = null; look.cur = null; look.tour = null; renderLookTools(); }
+  function stopTour() { if (look.tour) { look.tour = null; renderLookTools(); } }
+  function lobbyMini(map, w, h) {
+    const mw = Math.round(Math.max(70, Math.min(130, (h - 28) * (C.W + 2) / (map.F + 10))));
+    return { x: 14, y: 14, w: mw, h: Math.min(h - 28, mw * (map.F + 10) / (C.W + 2)) };
+  }
+  // 설정 창이 보드를 가리는 만큼 (오른쪽에 떠 있으면 폭, 좁은 화면에서 아래에서 올라왔으면 높이)
+  function panelCover(w, h) {
+    if (racing() || st.folded) return { right: 0, bottom: 0 };
+    const p = $('panel').getBoundingClientRect(), b = $('board').getBoundingClientRect();
+    if (!p.width) return { right: 0, bottom: 0 };
+    if (p.left - b.left > w * 0.45) return { right: w - (p.left - b.left) + 12, bottom: 0 };
+    return { right: 0, bottom: Math.max(0, h - (p.top - b.top) + 8) };
+  }
+  // 목표 화면: 보드 폭이 안전 영역(미니맵 오른쪽 ~ 설정 창 왼쪽)에 맞게. 코스가 화면보다 조금만 길면(짧은 코스) 다 들어오게
+  function lookTarget(map, w, h, top, now, cover) {
+    const left = st.mmRect.x + st.mmRect.w + 16, right = Math.max(left + 200, w - cover.right - 10);
+    const vTop = 0, vBot = Math.max(120, h - cover.bottom), sw = right - left, FULL = C.W + 1.2;
+    const yTop = Math.min(C.VIEW.y0, top - 1.6), yEnd = map.F + C.LABEL_BAND + 0.8, courseH = yEnd - yTop;
+    const visFull = (vBot - vTop) * FULL / sw;
+    if (look.zoomW === null) look.zoomW = courseH <= visFull * 1.35 ? FULL * Math.max(1, courseH / visFull) : FULL;
+    look.zoomW = Math.max(12, Math.min(FULL * 2.4, look.zoomW));
+    const k = sw / look.zoomW, visH = (vBot - vTop) / k;
+    const clampY = y => (visH >= courseH ? (yTop + yEnd) / 2 : Math.max(yTop + visH / 2, Math.min(yEnd - visH / 2, y)));
+    if (look.tour) {
+      const e = (now - look.tour.t0) / 1000, A = clampY(-Infinity), B = clampY(Infinity);
+      const D = Math.max(3, (B - A) / 9), hold = 1.4, R = Math.min(3, Math.max(1, D * 0.35));
+      const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+      if (e < D) look.cy = A + (B - A) * ease(e / D);
+      else if (e < D + hold) look.cy = B;
+      else if (e < D + hold + R) look.cy = B + (A - B) * ease((e - D - hold) / R);
+      else { look.tour = null; look.cy = null; renderLookTools(); }
+    }
+    if (look.cy !== null) look.cy = clampY(look.cy);   // 끝을 넘겨 굴린 만큼 쌓이지 않게
+    const cy = look.cy === null ? clampY(-Infinity) : look.cy;
+    const half = Math.min(look.zoomW, FULL) / 2;
+    const cx = look.zoomW >= FULL || look.cx === null ? C.W / 2 : Math.max(half - 0.6, Math.min(C.W + 0.6 - half, look.cx));
+    if (look.cx !== null) look.cx = cx;
+    look.geo = { left, sw, vTop, vBot };
+    return { cx, cy, zoomW: look.zoomW, left, sw, vTop, vBot, tour: !!look.tour };
+  }
+  // 확대·축소: 화면의 (px, py) 아래 지점이 그대로 있게
+  function zoomBy(f, px, py) {
+    if (!look.cur || !look.geo || !st.T) return;
+    const g = look.geo, wx = st.T.mx(px), wy = st.T.my(py);
+    const z = Math.max(12, Math.min((C.W + 1.2) * 2.4, look.zoomW * f)), k = g.sw / z;
+    look.zoomW = z;
+    look.cy = wy - (py - (g.vTop + g.vBot) / 2) / k;
+    look.cx = wx - (px - (g.left + g.sw / 2)) / k;
+    Object.assign(look.cur, { zoomW: z, cy: look.cy, cx: look.cx });
+  }
+  function renderLookTools() {
+    const b = $('tourBtn');
+    if (!b) return;
+    b.textContent = look.tour ? '멈추기' : '코스 둘러보기';
+    b.classList.toggle('on', !!look.tour);
+  }
+  // 접힌 창: 방이 열렸으면 방코드와 인원, 아니면 게임 이름
+  function renderPill() {
+    if (!$('pillCode')) return;
+    $('pillCode').textContent = st.roomOpen ? st.code || '----' : '핀볼 사다리';
+    $('pillInfo').textContent = st.roomOpen ? `${named().length}명 참가` : '설정';
+  }
+
+  function drawLobby(ctx, w, h, map, clock, dt, now) {
     const names = st.phase === 'setup' && !st.roomOpen ? [] : lobbyNames();
     const top = names.reduce((m, n) => Math.min(m, n.y), C.START_Y);
-    const lay = Render.overviewLayout(map, w, h, top);
-    st.T = st.ovT = lay.cols[0].T;   // 폰 없는 사람 끌기는 첫 단 좌표로
-    st.mmRect = null;
-    Render.drawOverview(ctx, w, h, lay, {
-      map, clock, now: 0,
+    const cover = panelCover(w, h);
+    st.mmRect = lobbyMini(map, w, Math.max(160, h - cover.bottom));   // 아래에서 올라온 창(좁은 화면)에 가리지 않게
+    const v = lookTarget(map, w, h, top, now, cover);
+    // 굴리기는 부드럽게 따라가고, 둘러보기는 경로를 그대로
+    const cur = look.cur || (look.cur = { cx: v.cx, cy: v.cy, zoomW: v.zoomW });
+    const a = v.tour ? 1 : 1 - Math.exp(-dt * 11);
+    for (const key of ['cx', 'cy', 'zoomW']) cur[key] += (v[key] - cur[key]) * a;
+    const k = v.sw / cur.zoomW, x0 = cur.cx - cur.zoomW / 2 - v.left / k, y0 = cur.cy - (v.vTop + v.vBot) / 2 / k;
+    const view = st.lookRect = { x0, x1: x0 + w / k, y0, y1: y0 + h / k };
+    const T = st.T = Render.makeT(w, h, view, 0);   // 폰 없는 사람 끌기도 이 좌표로
+    // 둘러보기 도구를 설정 창에 가리지 않는 쪽 가운데에
+    const space = Math.round(w - v.left - v.sw - 10 > 40 ? w - (v.left + v.sw) - 10 : 0);
+    if (space !== st.panelSpace) { st.panelSpace = space; document.querySelector('.host').style.setProperty('--panel-space', space + 'px'); }
+    Render.drawScene(ctx, T, {
+      map, view, clock, now: 0,
       special: Render.specialLabels(st.phase === 'setup' ? parseLabels($('labels').value).labels : st.labels),
       mills: map.els.filter(e => e.kind === 'mill').map(el => ({ el, angle: el.speed * clock })),
       movers: map.els.filter(e => e.kind === 'pendulum' || e.kind === 'slider' || e.kind === 'disc').map(el => Object.assign({ el }, Sim.moverPose(el, clock))),
       obstacles: st.obstacles, colorOf, names,
       segs: segsForDraw(), blind: st.setup.blind && st.phase !== 'setup',
-      showZone: st.setup.obsPer > 0, showStart: true, showMillRange: true,
+      showZone: st.setup.obsPer > 0, showStart: true, showMillRange: true, fx: st.fx,
     });
-    Render.drawVignette(ctx, w, h, 0.3);
+    Render.drawVignette(ctx, w, h, 0.32);
+    Render.drawMinimap(ctx, st.mmRect, { map, view, names: names.map(n => ({ x: n.x, y: n.y, color: n.color })) });
   }
 
   function drawRace(ctx, w, h, map, clock, now, dt) {
@@ -934,31 +1022,68 @@
   function bindBoard() {
     const cv = $('board');
     const pt = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    // 미니맵: 진행 중이면 4초 동안 그쪽을 보고, 시작 전이면 그곳으로 간다
     const onMinimap = (px, py) => {
       const r = st.mmRect;
-      return r && (st.phase === 'running' || st.phase === 'done') && px >= r.x - 8 && px <= r.x + r.w + 8 && py >= r.y - 8 && py <= r.y + r.h + 8;
+      return r && st.phase !== 'countdown' && px >= r.x - 8 && px <= r.x + r.w + 8 && py >= r.y - 8 && py <= r.y + r.h + 8;
     };
-    const lookAt = py => { st.manual = { y: Render.minimapGeom(st.map, st.mmRect).toY(py), until: performance.now() + 4000 }; };
+    const lookAt = py => {
+      const y = Render.minimapGeom(mapNow(), st.mmRect).toY(py);
+      if (racing()) st.manual = { y, until: performance.now() + 4000 };
+      else { stopTour(); look.cy = y; hideHint(); }
+    };
     cv.addEventListener('pointerdown', e => {
       const [px, py] = pt(e);
       if (onMinimap(px, py)) { st.drag = { mm: true }; lookAt(py); cv.setPointerCapture(e.pointerId); return; }
       const hit = hitLocal(px, py);
-      if (!hit) return;
-      st.drag = { id: hit.n.id, off: hit.off };
+      if (hit) {
+        st.drag = { id: hit.n.id, off: hit.off };
+      } else if (!racing() && look.cur && st.T) {
+        // 빈 곳을 끌면 화면이 따라 움직인다
+        stopTour();
+        st.drag = { pan: true, px, py, cx: look.cur.cx, cy: look.cur.cy };
+      } else return;
       cv.setPointerCapture(e.pointerId);
       cv.style.cursor = 'grabbing';
     });
     cv.addEventListener('pointermove', e => {
       const [px, py] = pt(e);
-      if (st.drag && st.drag.mm) { lookAt(py); return; }
-      if (st.drag) {
-        const p = byId(st.drag.id);
-        if (p) { p.x = Sim.clampDropX(r2(st.T.mx(px) - st.drag.off), p.w); scheduleLobby(); }
-      } else cv.style.cursor = onMinimap(px, py) ? 'pointer' : hitLocal(px, py) ? 'grab' : '';
+      const d = st.drag;
+      if (d && d.mm) { lookAt(py); return; }
+      if (d && d.pan) {
+        const k = st.T.k;
+        look.cy = d.cy - (py - d.py) / k;
+        look.cx = d.cx - (px - d.px) / k;
+        Object.assign(look.cur, { cy: look.cy, cx: look.zoomW >= C.W + 1.2 ? look.cur.cx : look.cx });
+        if (Math.abs(py - d.py) + Math.abs(px - d.px) > 6) hideHint();
+        return;
+      }
+      if (d) {
+        const p = byId(d.id);
+        if (p) { p.x = Sim.clampDropX(r2(st.T.mx(px) - d.off), p.w); scheduleLobby(); }
+      } else cv.style.cursor = onMinimap(px, py) ? 'pointer' : hitLocal(px, py) ? 'grab' : racing() ? '' : 'grab';
     });
     const end = () => { if (st.drag) { st.drag = null; cv.style.cursor = ''; } };
     cv.addEventListener('pointerup', end);
     cv.addEventListener('pointercancel', end);
+    // 휠: 위아래로 굴리기, Ctrl(⌘)+휠: 확대·축소 (시작 전에만)
+    cv.addEventListener('wheel', e => {
+      if (racing() || !look.cur || !st.T) return;
+      e.preventDefault();
+      stopTour();
+      hideHint();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? cv.clientHeight : 1;
+      const dy = Math.max(-400, Math.min(400, e.deltaY * unit));
+      if (e.ctrlKey || e.metaKey) { const [px, py] = pt(e); zoomBy(Math.exp(dy * 0.0016), px, py); }
+      else look.cy = (look.cy === null ? look.cur.cy : look.cy) + dy * 1.15 / st.T.k;
+    }, { passive: false });
+  }
+  // 둘러보는 법 안내는 한 번 움직여 보면 숨긴다 (다음에 열어도 안 보임)
+  function hideHint() {
+    const el = $('lookHint');
+    if (!el || el.classList.contains('hidden')) return;
+    el.classList.add('hidden');
+    ls.set('plb.lookHint', 1);
   }
 
   // ---------- 버튼 ----------
@@ -974,7 +1099,7 @@
       for (const b of $('coursePick').children) { const on = b.dataset.course === st.courseSel; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }
     };
     pickCourse(st.courseSel);
-    for (const b of $('coursePick').children) b.onclick = () => { pickCourse(b.dataset.course); st.cam = null; saveSetup(); };
+    for (const b of $('coursePick').children) b.onclick = () => { pickCourse(b.dataset.course); st.cam = null; resetLook(); saveSetup(); };
     ta.addEventListener('input', () => { renderSetupHint(); $('setupErr').textContent = ''; saveSetup(); });
     const step = d => { $('obsOut').textContent = Math.max(0, Math.min(5, +$('obsOut').textContent + d)); saveSetup(); };
     $('obsMinus').onclick = () => step(-1);
@@ -1044,6 +1169,21 @@
       err.textContent = '';
       startGame();
     };
+    // 설정 창 접기·펼치기
+    $('foldBtn').onclick = () => { st.folded = true; showPanel(); };
+    $('panelPill').onclick = () => { st.folded = false; showPanel(); };
+    // 코스 둘러보기 도구
+    const zoomCenter = f => { const g = look.geo, cv = $('board'); if (g) zoomBy(f, g.left + g.sw / 2, (g.vTop + g.vBot) / 2); else if (cv) zoomBy(f, cv.clientWidth / 2, cv.clientHeight / 2); };
+    $('zoomIn').onclick = () => { stopTour(); zoomCenter(1 / 1.25); };
+    $('zoomOut').onclick = () => { stopTour(); zoomCenter(1.25); };
+    $('tourBtn').onclick = () => {
+      if (look.tour) { stopTour(); return; }
+      look.zoomW = null; look.cx = null;   // 둘러보기는 보드 폭 전체로
+      look.tour = { t0: performance.now() };
+      hideHint();
+      renderLookTools();
+    };
+    if (ls.get('plb.lookHint')) $('lookHint').classList.add('hidden');
     $('camBtn').onclick = () => {
       st.follow = !st.follow;
       $('camBtn').textContent = st.follow ? '따라가기' : '전체 보기';

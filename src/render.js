@@ -1003,92 +1003,6 @@
     ctx.fillRect(0, 0, w, h);
   }
 
-  // ---------- 전체 지도 (호스트 대기실) ----------
-  // 긴 코스를 구간 경계에서 잘라 몇 단으로 나란히 놓는다. 화면에 가장 크게 들어가는 단 수(1~4)와 자를 곳을 고른다
-  function overviewLayout(map, w, h, top) {
-    const yTop = Math.min(C.VIEW.y0, top - 1.4), yEnd = map.F + C.LABEL_BAND + 0.6;
-    const cuts = map.stages.slice(1).map(s => s.y0);
-    const colW = C.W + 1.2, gap = 6, padX = 22, padY = 26;
-    let best = null;
-    const pick = (start, n, acc) => {
-      if (n === 0) {
-        const b = [yTop, ...acc, yEnd], H = Math.max(...b.slice(1).map((y, i) => y - b[i]));
-        const m = b.length - 1, Wm = m * colW + (m - 1) * gap;
-        const k = Math.min((w - padX * 2) / Wm, (h - padY * 2) / H);
-        if (!best || k > best.k + 1e-9) best = { k, bounds: b, H };
-        return;
-      }
-      for (let i = start; i < cuts.length; i++) pick(i + 1, n - 1, acc.concat(cuts[i]));
-    };
-    for (let n = 0; n <= Math.min(3, cuts.length); n++) pick(0, n, []);
-    const { k, bounds, H } = best, m = bounds.length - 1;
-    const totalW = (m * colW + (m - 1) * gap) * k, x0 = (w - totalW) / 2, y0 = (h - H * k) / 2;
-    const cols = [];
-    for (let i = 0; i < m; i++) {
-      const sx = x0 + i * (colW + gap) * k;
-      cols.push({
-        y0: bounds[i], y1: bounds[i + 1],
-        rect: { x: sx, y: y0, w: colW * k, h: (bounds[i + 1] - bounds[i]) * k },
-        T: tOf(k, sx + 0.6 * k, y0 - bounds[i] * k, w, h),
-      });
-    }
-    return { k, cols };
-  }
-  function drawOverview(ctx, w, h, lay, sc) {
-    const clock = sc.clock || 0;
-    ctx.fillStyle = COL.void;
-    ctx.fillRect(0, 0, w, h);
-    // 단 사이 틈과 양옆에 옆판 그림
-    const img = Assets.img.side;
-    if (img) {
-      const strip = (x, sw, flip) => {
-        if (sw < 6) return;
-        const th = img.height * (sw / img.width);
-        ctx.save();
-        ctx.beginPath(); ctx.rect(x, 0, sw, h); ctx.clip();
-        ctx.globalAlpha = 0.55;
-        if (flip) { ctx.translate(x * 2 + sw, 0); ctx.scale(-1, 1); }
-        for (let y = -((clock * 6) % th); y < h; y += th) ctx.drawImage(img, x, y, sw, th);
-        ctx.restore();
-      };
-      const c0 = lay.cols[0].rect, cl = lay.cols[lay.cols.length - 1].rect;
-      strip(Math.max(0, c0.x - Math.min(200, c0.x)), Math.min(200, c0.x) - 4, false);
-      for (let i = 0; i + 1 < lay.cols.length; i++) {
-        const a = lay.cols[i].rect, b = lay.cols[i + 1].rect;
-        strip(a.x + a.w + 6, b.x - (a.x + a.w) - 12, i % 2 === 1);
-      }
-      strip(cl.x + cl.w + 4, Math.min(200, w - (cl.x + cl.w)) - 4, true);
-    }
-    lay.cols.forEach((col, i) => {
-      const r = col.rect;
-      ctx.save();
-      ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
-      drawScene(ctx, col.T, Object.assign({}, sc, { view: { x0: -0.6, x1: C.W + 0.6, y0: col.y0, y1: col.y1 }, noOutside: true, keepBudget: i > 0 }));
-      ctx.restore();
-      ctx.strokeStyle = 'rgba(201,206,221,0.25)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-    });
-    // 단과 단을 잇는 길: 아래 끝 → 틈 → 다음 단 위 끝. 빛이 흐르는 방향 = 이름이 가는 방향
-    for (let i = 0; i + 1 < lay.cols.length; i++) {
-      const a = lay.cols[i].rect, b = lay.cols[i + 1].rect, glow = themeOf(i + 1).glow;
-      const xa = a.x + a.w * 0.5, xb = b.x + b.w * 0.5, xm = (a.x + a.w + b.x) / 2;
-      const yb = Math.min(h - 6, a.y + a.h + 14), yt = Math.max(6, b.y - 14);
-      ctx.beginPath();
-      ctx.moveTo(xa, a.y + a.h); ctx.lineTo(xa, yb); ctx.lineTo(xm, yb); ctx.lineTo(xm, yt); ctx.lineTo(xb, yt); ctx.lineTo(xb, b.y);
-      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.strokeStyle = alpha(glow, 0.22); ctx.lineWidth = 9; ctx.stroke();
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = lighten(glow, 0.3); ctx.lineWidth = 2.5;
-      ctx.setLineDash([10, 9]); ctx.lineDashOffset = -clock * 40; ctx.stroke();
-      ctx.setLineDash([]);
-      // 화살촉 (다음 단으로 들어가는 곳)
-      ctx.fillStyle = lighten(glow, 0.3);
-      ctx.beginPath(); ctx.moveTo(xb - 7, b.y - 9); ctx.lineTo(xb + 7, b.y - 9); ctx.lineTo(xb, b.y + 1); ctx.closePath(); ctx.fill();
-    }
-  }
-
   // ---------- 미니맵 ----------
   // 코스 전체를 세로 띠로. 정적인 부분은 한 번 그려 두고, 이름 점과 카메라 창만 매 프레임 그린다
   const mm = { key: '', cv: null };
@@ -1128,6 +1042,18 @@
       }
       c.fillStyle = COL.laser;
       c.fillRect(0, Y(map.F) - 1, g.w, 2.5);
+      if (g.w >= 100 && map.stages.length > 1) {
+        // 대기실처럼 미니맵이 넓으면 구간 이름을 띠 위쪽에
+        c.font = '700 10px "IBM Plex Sans KR", sans-serif';
+        c.textAlign = 'left'; c.textBaseline = 'top';
+        map.stages.forEach((s, i) => {
+          const y = Y(Math.max(s.y0, g.y0)) + 3, th = themeOf(i);
+          c.fillStyle = 'rgba(6,4,13,0.6)';
+          c.fillRect(2, y - 1, c.measureText(`${i + 1} ${s.name}`).width + 6, 13);
+          c.fillStyle = lighten(th.glow, 0.35);
+          c.fillText(`${i + 1} ${s.name}`, 5, y);
+        });
+      }
     }
     ctx.drawImage(mm.cv, g.x - 4, g.top - 4, g.w + 8, g.h + 8);
     const X = x => g.x + x * g.s, Y = y => g.top + (y - g.y0) * g.s;
@@ -1217,6 +1143,6 @@
 
   root.Render = {
     COL, PALETTE, THEMES, LOBBY, cutText, specialLabels, themeOf, stageTheme, setupCanvas, makeT, drawScene, drawObstacle,
-    drawMinimap, minimapGeom, overviewLayout, drawOverview, drawVignette, Fx, Sound, Assets, toast, lighten, alpha,
+    drawMinimap, minimapGeom, drawVignette, Fx, Sound, Assets, toast, lighten, alpha,
   };
 })(typeof self !== 'undefined' ? self : this);

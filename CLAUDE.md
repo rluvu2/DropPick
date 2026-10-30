@@ -29,7 +29,10 @@ PC(큰 화면)가 방을 열면 참가자가 폰으로 QR을 찍어 들어와 **
    - 2026-10-30 사용자 요청: "마블룰렛처럼 더 화려하게(수익화 안 하니 많이 참조해도 됨)", "시작 전에는 맵 전체를", "도착 이펙트".
      → 화려함의 요소(검은 바탕의 강한 네온, 가까운 카메라, 전원 실시간 순위, 큰 당첨 연출)는 가져오되 우리 방식으로 새로 만들었다.
      그쪽 맵 배치·그림·화면 구성을 그대로 옮기거나 재현하지는 않는다(상표·저작물 문제 + 우리 게임의 정체성).
-9. **호스트 대기실은 코스 전체를 보여준다**(긴 코스는 구간 경계에서 잘라 여러 단으로 나란히). 장애물 설치는 폰에서 하므로 1구간만 키울 필요 없음.
+9. **시작 전 호스트 화면은 코스를 크게, 원하는 곳을 둘러볼 수 있게**(2026-10-30 사용자 요청): 보드 폭을 꽉 채운 큰 화면 + 왼쪽 미니맵(누르기·끌기로 이동),
+   휠·끌기·확대, '코스 둘러보기'(출발→결승선 비행). 장애물 설치는 폰에서 하므로 1구간만 키울 필요 없음.
+   (처음엔 코스 전체를 여러 단으로 나란히 보여줬는데 "작고 안 예쁘다"는 피드백으로 바꿈)
+10. **설정·대기실 창은 보드 위에 떠 있는 창**(2026-10-30 사용자 요청, 마블룰렛식 플로팅). 접으면 방코드·인원만 보이는 작은 단추.
 
 ---
 
@@ -137,8 +140,15 @@ PC(큰 화면)가 방을 열면 참가자가 폰으로 QR을 찍어 들어와 **
 - 1등(가장 앞선 이름) 위에 왕관. 꼬리는 'lighter'.
 
 ### 화면 구성 (호스트)
-- **대기실·설정 = 전체 지도**(`Render.overviewLayout/drawOverview`): 긴 코스를 구간 경계에서 잘라 1~4단으로 나란히 놓는다(화면에 가장 크게 들어가는 단 수·자를 곳을 고름).
-  단 사이·양옆은 옆판 그림(`side.webp`), 단과 단은 빛이 흐르는 점선 길로 잇는다. 이름·장애물은 첫 단에. `st.T`는 첫 단 좌표(폰 없는 사람 끌기).
+- **보드는 늘 화면 전체**(`.stage` absolute). 설정·대기실 창(`#panel`)은 그 위 오른쪽에 떠 있는 유리 창(내용 높이만큼, 넘치면 창 안에서 스크롤).
+  `접기`(`#foldBtn`)로 접으면 `#panelPill`(방코드·인원·펼치기)만 남는다(`st.folded`, `.host.folded`). 좁은 화면(980px 이하)에서는 아래에서 올라오는 창.
+- **시작 전 = 코스 둘러보기**(`host.js look`): 보드 폭을 안전 영역(왼쪽 미니맵 오른쪽 ~ 설정 창 왼쪽, `panelCover()`가 창 위치를 재서 구함)에 맞춘 큰 화면.
+  - `look.cy·cx·zoomW` = 목표, `look.cur` = 실제(부드럽게 따라감). cy가 null이면 출발 지점(쌓인 이름 바로 위부터). 짧은 코스처럼 조금만 길면 한 화면에 다 들어오게 축소.
+  - 휠 = 위아래, Ctrl(⌘)+휠·`−``+` = 확대·축소(커서 아래 지점 고정, 보이는 폭 12m ~ 보드 폭의 2.4배), 빈 곳 끌기 = 이동, 미니맵 누르기·끌기 = 그곳으로.
+  - `코스 둘러보기`(`#tourBtn`): 보드 폭 전체로 출발 지점 → 결승선(초당 9m) → 1.4초 멈춤 → 출발 지점으로 되감기. 아무 조작이나 하면 멈춤.
+  - 안내 문구(`#lookHint`)는 한 번 움직여 보면 숨기고 `localStorage 'plb.lookHint'`에 기억.
+  - 미니맵은 대기실에서 더 넓게(최대 130px) 그리고 구간 이름을 적는다. 시작하면 `st.cam = st.lookRect`(보던 곳)에서 출발 지점으로 카메라가 다가간다.
+  - `st.T`는 이 화면의 좌표 → 폰 없는 사람 이름 끌기(`hitLocal`)가 그대로 동작. 이름 위가 아닌 곳을 끌면 화면 이동.
 - **진행 중 = 보드가 화면 전체**(`.host.racing`, 오른쪽 설정 판은 접힘). 오른쪽에 HUD(`#hud`: 버튼, 시계, **전원 순위판**), 왼쪽 위에 미니맵.
   보드는 둘 사이(안전 영역)에 오게 카메라 x를 맞춘다. HUD 폭은 `st.hudW`(화면 폭의 22%, 220~320px)를 CSS 변수 `--hud-w`로 넘긴다.
 - 카메라는 무리의 좌우 폭(양 끝 10% 제외)에 맞춰 **보이는 폭 31m ~ 17m로 천천히 확대**(`st.zoomW`, 시간 상수 약 0.6초).
@@ -430,7 +440,7 @@ new Sim.Game({ seed, map, labels:[], names:[{id, polys, w, h, x}], obstacles:[{i
 
 ### DOM ID (style.css가 전제하는 구조)
 - 호스트
-  - 레이아웃: `.host(.racing) > .stage(#board, #hud, #stageTitle, #winFx(#winName #winLabel), #banner.banner, #overlay.overlay > .result-card) + aside.panel`
+  - 레이아웃: `.host(.racing .folded) > .stage(#board, #hud, #lookTools(#zoomOut #zoomIn #tourBtn #lookHint), #stageTitle, #winFx(#winName #winLabel), #banner.banner, #overlay.overlay > .result-card) + aside#panel.panel(#foldBtn, 떠 있는 창) + #panelPill(#pillCode #pillInfo)`
   - `#hSetup`: `#labels #labelsHint #obsMinus #obsOut #obsPlus #blind #setupErr #openRoom`, `details.joinbox`
   - `#hLobby`: `.lobby-head #net`, `.join > .qr-box > #qr`, `#code #joinUrl`, `.counts #cPlayers #cReady #cSlots`, `#plist`, `#addForm #addName`, `#lobbyErr #startBtn #editSetup`
   - `#hud`(진행 중, 보드 위): `#camBtn #speedBtn #soundBtn #clock #runSub #liveWrap > #liveRank #abortBtn`

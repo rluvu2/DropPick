@@ -42,6 +42,13 @@
         </div>
         <button id="abortBtn" class="link danger" type="button">중단하고 대기실로</button>
       </div>
+      <!-- 시작 전: 코스 둘러보기 도구 (휠·끌기·미니맵으로도 움직임) -->
+      <div id="lookTools" class="look-tools hidden">
+        <button id="zoomOut" class="icon-btn" type="button" aria-label="축소">−</button>
+        <button id="zoomIn" class="icon-btn" type="button" aria-label="확대">+</button>
+        <button id="tourBtn" class="icon-btn" type="button">코스 둘러보기</button>
+        <span id="lookHint" class="look-hint">휠이나 끌기로 코스를 둘러보고, 미니맵을 누르면 그곳으로 가요</span>
+      </div>
       <div id="stageTitle" class="stage-title" aria-hidden="true"></div>
       <div id="winFx" class="win-fx hidden" role="status">
         <span class="win-tag">당첨</span>
@@ -63,7 +70,9 @@
       </div>
     </div>
 
-    <aside class="panel">
+    <!-- 설정·대기실은 보드 위에 떠 있는 창. 접으면 방코드만 보이는 작은 단추가 된다 -->
+    <aside id="panel" class="panel">
+      <button id="foldBtn" class="icon-btn fold-btn" type="button" aria-label="설정 창 접기">접기</button>
       <section id="hSetup" class="pane">
         <div>
           <h1 class="title">핀볼 사다리</h1>
@@ -138,6 +147,9 @@
         </div>
       </section>
     </aside>
+    <button id="panelPill" class="panel-pill hidden" type="button" aria-label="설정 창 펼치기">
+      <span id="pillCode" class="pill-code"></span><span id="pillInfo" class="pill-info"></span><b>펼치기</b>
+    </button>
   </div>
   <div id="toasts" aria-live="polite"></div>
 </template>
