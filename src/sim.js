@@ -63,15 +63,16 @@
   // timers — sudden: 유저 장애물 전부 파괴(사용자 요구사항 45초), rush: 중력 1.6배, final: 남은 이름 유령 낙하.
   const COURSES = {
     short: { id: 'short', label: '짧은 코스', finishY: 31, timers: { sudden: 45, rush: 45, final: 75 } },
-    long: { id: 'long', label: '긴 코스', finishY: 141, timers: { sudden: 45, rush: 90, final: 120 } },
+    long: { id: 'long', label: '긴 코스', finishY: 159, timers: { sudden: 45, rush: 90, final: 120 } },
   };
+  // 구간 이름은 내부용(코드·문서). 화면에는 내지 않는다. 구간 그림(30×30m)이 일그러지지 않게 구간 높이는 37.5m까지
   const STAGES_LONG = [
     { name: '핀볼 숲', y0: -16, y1: 31.5 },
     { name: '점프 슬로프', y0: 31.5, y1: 65.5 },
     { name: '범퍼 정원', y0: 65.5, y1: 88 },
     { name: '시계추 골짜기', y0: 88, y1: 110 },
-    { name: '회전 원판', y0: 110, y1: 123.5 },
-    { name: '마지막 반전', y0: 123.5, y1: Infinity },
+    { name: '원판과 거대 풍차', y0: 110, y1: 147 },
+    { name: '마지막 반전', y0: 147, y1: Infinity },
   ];
 
   // ---------- 맵 ----------
@@ -82,7 +83,7 @@
     const wall = (a, b, r) => els.push({ kind: 'wall', a, b, r: r || 0.3 });
     const pin = (x, y, r) => els.push({ kind: 'pin', c: [x, y], r: r || 0.3 });
     const bumper = (x, y, r, power) => els.push({ kind: 'bumper', c: [x, y], r, power: power || C.MAP_BUMP_SPEED });   // power가 크면 '슈퍼 범퍼'
-    const mill = (x, y, len, speed) => els.push({ kind: 'mill', c: [x, y], len, thick: 0.36, speed });
+    const mill = (x, y, len, speed, opt) => els.push(Object.assign({ kind: 'mill', c: [x, y], len, thick: 0.36, speed }, opt));   // opt.giant: 거대 풍차
     const defl = (a, b, r) => els.push({ kind: 'deflector', a, b, r: r || 0.22 });
     const pendulum = (x, y, len, amp, period, phase) => els.push({ kind: 'pendulum', c: [x, y], len, thick: 0.55, amp, period, phase: phase || 0 });
     const slider = (x, y, len, tilt, amp, period, phase) => els.push({ kind: 'slider', c: [x, y], len, thick: 0.45, tilt, amp, period, phase: phase || 0 });
@@ -148,6 +149,11 @@
       // 5구간: 회전 원판 — 반대로 도는 원판 둘. 그 아래 다이아몬드 섬이 길을 좌우 두 갈래(각 8m)로 나눴다가 합친다
       disc(48.5, 113.5, 2.4, 2.4);
       disc(61.5, 113.5, 2.4, -2.4);
+      // 거대 풍차(지름 12m) — 섬의 오른쪽 갈래 바로 아래, 오른쪽으로 치우쳐서 돈다. 위 날이 왼쪽으로 돌아(화면에서 반시계)
+      // 오른쪽 갈래로 내려온 이름을 왼쪽으로 쳐 낸다. 왼쪽 12m는 범퍼 둘이 있는 빈 길. 벽·섬 끝·다른 장치와 6m 이상 띄운다
+      mill(58, 139, 6.0, -1.1, { thick: 0.7, giant: true });
+      bumper(46, 132, 0.9);
+      bumper(46, 145, 0.9);
       // 6구간: 마지막 반전 — 결승선 바로 위 반대로 도는 풍차 둘(안쪽 날이 아래로 돈다)이 이름을 좌우로 쳐내서 마지막까지 칸을 모른다.
       // 양쪽 벽의 킥커는 벽을 타고 내려오는 이름을 풍차 쪽으로 밀어 넣는다
       mill(49.5, F - 5, 3.0, 2.2);
@@ -473,8 +479,10 @@
           ground.createFixture(new planck.Circle({ x: el.c[0], y: el.c[1] }, el.r), { friction: 0.05, restitution: 0.6, userData: { type: 'mbumper', c: el.c, el: i, power: el.power || C.MAP_BUMP_SPEED } });
         } else if (el.kind === 'mill') {
           const b = this.world.createBody({ type: 'kinematic', position: { x: el.c[0], y: el.c[1] }, angle: this.rand() * Math.PI });
-          b.createFixture(new planck.Box(el.len, el.thick / 2), { friction: 0.2, restitution: 0.35, userData: { type: 'mill' } });
-          b.createFixture(new planck.Box(el.thick / 2, el.len), { friction: 0.2, restitution: 0.35, userData: { type: 'mill' } });
+          // 거대 풍차는 더 튕기게. el은 화면이 맞은 풍차를 번쩍이게 하려고 ('spark' 이벤트)
+          const fd = { friction: 0.2, restitution: el.giant ? 0.5 : 0.35, userData: { type: 'mill', el: i } };
+          b.createFixture(new planck.Box(el.len, el.thick / 2), fd);
+          b.createFixture(new planck.Box(el.thick / 2, el.len), fd);
           b.setAngularVelocity(el.speed);
           this.mills.push({ el, body: b });
         } else if (el.kind === 'pendulum' || el.kind === 'slider' || el.kind === 'disc') {

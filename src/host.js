@@ -364,9 +364,14 @@
         break;
       }
       case 'spark': {
-        // 핀·벽에 세게 부딪힘: 핀은 하얗게 번쩍, 부딪힌 자리에 이름 색 불꽃
+        // 핀·벽에 세게 부딪힘: 핀은 하얗게 번쩍, 부딪힌 자리에 이름 색 불꽃. 거대 풍차에 맞으면 풍차가 번쩍이고 분홍 고리, 아주 세면 흔들림
         const p = byId(e.id), color = p ? p.color : Render.COL.chrome, strong = e.v > 5;
         if (e.kind === 'pin' && e.el >= 0) { fx.light(e.el); Render.Sound.play('pin'); }
+        if (e.kind === 'mill' && e.el >= 0 && st.map.els[e.el] && st.map.els[e.el].giant) {
+          fx.light(e.el);
+          fx.ring(e.x, e.y, '#FF4FD8', strong ? 2.2 : 1.2);
+          if (e.v > 7) { fx.shake = Math.max(fx.shake, 0.12); Render.Sound.play('boom'); } else Render.Sound.play('bump');
+        }
         fx.sparks(e.x, e.y, color, strong ? 6 : 3, strong ? 0.8 : 0.55);
         if (strong) fx.flare(e.x, e.y, color);
         break;

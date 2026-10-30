@@ -488,6 +488,7 @@
         ctx.lineWidth = Math.max(1, 0.05 * k);
         ctx.beginPath(); ctx.arc(x, y, (el.len + el.thick / 2) * k, 0, TAU); ctx.stroke();
       }
+      if (el.giant) { drawGiantMill(ctx, T, el, m.angle, lit ? lit.get(map.els.indexOf(el)) || 0 : 0, clock); continue; }
       const ca = Math.cos(m.angle), sa = Math.sin(m.angle), L = el.len;
       neon(ctx, T, [el.c[0] - ca * L, el.c[1] - sa * L], [el.c[0] + ca * L, el.c[1] + sa * L], el.thick / 2, glow, 'butt');
       neon(ctx, T, [el.c[0] + sa * L, el.c[1] - ca * L], [el.c[0] - sa * L, el.c[1] + ca * L], el.thick / 2, glow, 'butt');
@@ -593,6 +594,31 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.92)';
     ctx.lineWidth = Math.max(1, r * 0.75 * k); ctx.stroke();
     ctx.lineCap = 'round';
+  }
+  // 거대 풍차: 세게 치는 장치 색(진분홍)의 굵은 네온 날 넷 + 날 끝 전구 + 큰 허브. 휩쓰는 자리에 옅은 빛 고리. 맞으면 하얗게 번쩍
+  function drawGiantMill(ctx, T, el, angle, L, clock) {
+    const k = T.k, x = T.x(el.c[0]), y = T.y(el.c[1]), len = el.len, col = '#FF4FD8';
+    const c = L > 0 ? mix(col, '#FFFFFF', Math.min(0.75, L * 0.75)) : col;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = alpha(col, 0.09 + 0.05 * Math.sin(clock * 2.2) + 0.3 * L);
+    ctx.lineWidth = Math.max(2, 0.55 * k);
+    ctx.beginPath(); ctx.arc(x, y, len * k, 0, TAU); ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+    const ca = Math.cos(angle), sa = Math.sin(angle), tips = [[ca, sa], [-ca, -sa], [-sa, ca], [sa, -ca]];
+    neon(ctx, T, [el.c[0] - ca * len, el.c[1] - sa * len], [el.c[0] + ca * len, el.c[1] + sa * len], el.thick / 2, c, 'round');
+    neon(ctx, T, [el.c[0] + sa * len, el.c[1] - ca * len], [el.c[0] - sa * len, el.c[1] + ca * len], el.thick / 2, c, 'round');
+    ctx.globalCompositeOperation = 'lighter';
+    for (const [dx, dy] of tips) {
+      const tx = T.x(el.c[0] + dx * (len - 0.45)), ty = T.y(el.c[1] + dy * (len - 0.45)), gr = (0.9 + 0.5 * L) * k;
+      ctx.drawImage(glowSprite(col), tx - gr, ty - gr, gr * 2, gr * 2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#FFF4FB';
+    for (const [dx, dy] of tips) { ctx.beginPath(); ctx.arc(T.x(el.c[0] + dx * (len - 0.45)), T.y(el.c[1] + dy * (len - 0.45)), Math.max(1.5, 0.16 * k), 0, TAU); ctx.fill(); }
+    hub(ctx, x, y, Math.max(3, 0.7 * k));
+    // 허브 둘레를 도는 볼트
+    ctx.fillStyle = alpha(col, 0.95);
+    for (let j = 0; j < 6; j++) { const t = angle + j * Math.PI / 3; ctx.beginPath(); ctx.arc(x + Math.cos(t) * 1.15 * k, y + Math.sin(t) * 1.15 * k, Math.max(1.2, 0.12 * k), 0, TAU); ctx.fill(); }
   }
   // 킥커(점프대·벽 킥커): 빛나는 판 + 튀어 나가는 방향으로 흐르는 화살 모양. 맞으면 하얗게 번쩍
   function drawKicker(ctx, T, el, L, clock) {
