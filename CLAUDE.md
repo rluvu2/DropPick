@@ -26,6 +26,10 @@ PC(큰 화면)가 방을 열면 참가자가 폰으로 QR을 찍어 들어와 **
 8. **코스는 PC 설정에서 고른다**: 긴 코스(기본, 6구간, 136m, 한 판 약 40초) / 짧은 코스(1구간, 31m, 약 20초).
    - 2026-10-29 사용자 요청: "마블룰렛을 참고해 더 길고 세련되게". 장르 수준의 연출(긴 코스, 카메라, 미니맵, 실시간 순위,
      파티클, 배속)만 참고하고, 맵 배치·그림·이름은 베끼지 않는다. 우리만의 정체성(글자 바디, 레이저 칸, 폰 장애물)은 유지.
+   - 2026-10-30 사용자 요청: "마블룰렛처럼 더 화려하게(수익화 안 하니 많이 참조해도 됨)", "시작 전에는 맵 전체를", "도착 이펙트".
+     → 화려함의 요소(검은 바탕의 강한 네온, 가까운 카메라, 전원 실시간 순위, 큰 당첨 연출)는 가져오되 우리 방식으로 새로 만들었다.
+     그쪽 맵 배치·그림·화면 구성을 그대로 옮기거나 재현하지는 않는다(상표·저작물 문제 + 우리 게임의 정체성).
+9. **호스트 대기실은 코스 전체를 보여준다**(긴 코스는 구간 경계에서 잘라 여러 단으로 나란히). 장애물 설치는 폰에서 하므로 1구간만 키울 필요 없음.
 
 ---
 
@@ -39,7 +43,8 @@ PC(큰 화면)가 방을 열면 참가자가 폰으로 QR을 찍어 들어와 **
 - `src/style.css` — 호스트·폰 UI 스타일 (디자인 토큰 포함).
 - 테스트: `test/headless.js`(물리), `test/stress.js`(병렬 대량), `test/e2e.js`(호스트 1 + 폰 30), `test/fakepeer.js`, `test/export-glyphs.js` → `test/fixtures/names.json`(실제 글자 모양 50개), `test/browser-batch.js`(브라우저 안에서 대량), `test/host-perf.js`(호스트 fps), `test/server.js`, `test/browser.js`.
 - 배포: GitHub Pages `https://rluvu2.github.io/DropPick/` (main / root).
-- 2차(2026-10-29 구현, 10-30 배포): 긴 코스 + 연출 — 아래 "긴 코스와 연출" 참고. 이미지 에셋(`assets/`)은 아직 없음(코드로 그림).
+- 2차(2026-10-29 구현, 10-30 배포): 긴 코스 + 연출 — 아래 "긴 코스와 연출" 참고.
+- 3차(2026-10-30): 네온 아케이드 연출 + 전체 지도 대기실 + 도착 이펙트 + Gemini 이미지 에셋 — 아래 "네온 연출 (3차)" 참고.
 
 ### 검증 결과 — 짧은 코스 (2026-10-29, 30명 · 실제 글자 모양 50종)
 | 시나리오 | 판 수 | 안 끝난 판 | 45초 서든데스 | 75초 마무리 | 순간이동 나온 판 | 최장 |
@@ -103,21 +108,59 @@ PC(큰 화면)가 방을 열면 참가자가 폰으로 QR을 찍어 들어와 **
   처음 지그재그(20°, 3단)에서 이름당 17.7초 체류 + 순간이동 37% → 27° 2단 + 구석을 50° 모서리판으로 메워 6.5초, 4.5%.
   맵을 바꾸면 끼임 위치를 꼭 확인한다(구조물별로 unstick 위치를 모으는 스크립트를 만들어 쓰면 빠르다).
 
-### 화면 (render.js, host.js)
-- 구간별 테마(`Render.THEMES`: 바탕 그라디언트 + 네온 색), 구간 경계 점선과 큰 구간 제목, 벽·경사판은 구간 네온 빛 + 크롬 심, 핀은 금속 구 스프라이트.
-- 대기실(호스트·폰): 긴 코스는 1구간 아래를 지그재그 절단선으로 자르고 결승선 띠를 바로 붙여 보여준다(`Render.LOBBY`, `cutText`).
-- 카메라(진행 중, '따라가기'): 보드 폭을 꽉 채우고 **가장 많이 모인 무리**를 따라간다. 지금 보는 무리를 유지하다가 다른 곳에 3명 이상 더 모이면 넘어간다.
-  남은 이름이 셋 이하로 모이면 확대. '전체 보기'는 남은 이름 전부가 들어오게. 미니맵을 누르거나 끌면 4초 동안 그쪽을 본다.
-- **결승선 카메라**: 긴 코스에서 본 화면에 결승선이 안 보이면 아래 24% 띠에 결승선 근처를 따로 그린다(0.4초 유지될 때만 전환). 본 화면은 띠에 가리는 만큼 내려서 무리가 가운데 오게.
-- 미니맵(오른쪽 88px 세로 띠): 코스 정적 부분은 한 번 그려 두고 이름 점·카메라 창만 매 프레임.
-- 이름 꼬리(최근 9점), 범퍼 불꽃, 확정 때 결승선 고리, **당첨 칸**(가장 흔한 칸이 아닌 칸, `Render.specialLabels`)에 들어가면 앰버 배너 + 색종이 + 화면 흔들림 + 팡파르. 당첨 칸 이름은 결승선에서 앰버로 표시.
-- 구간 배너는 화면이 보고 있는 구간 기준. 오른쪽 패널: 시계, 지금 앞서가는 이름 5명(4Hz), 결과(이 목록만 스크롤), 1배속/2배속.
-- 에셋(선택): `assets/manifest.json`의 `images`에 파일 이름이 있으면 `Render.Assets`가 불러서 보드 옆(`side`)과 구간 바닥(`stage1`~`6`)에 쓴다. 없으면 코드로 그린다. 프롬프트는 `assets/README.md`.
+### 화면 (render.js, host.js) — 3차에서 바뀐 부분은 아래 "네온 연출 (3차)"
+- 구간별 테마(`Render.THEMES`: 그림이 없을 때의 바탕 그라디언트 + 네온 색), 구간 경계 점선과 큰 구간 제목.
+- 폰 대기실: 긴 코스는 1구간 아래를 지그재그 절단선으로 자르고 결승선 띠를 바로 붙여 보여준다(`Render.LOBBY`, `cutText`). 호스트는 3차부터 전체 지도.
+- 카메라(진행 중, '따라가기'): **가장 많이 모인 무리**를 따라간다. 지금 보는 무리를 유지하다가 다른 곳에 3명 이상 더 모이면 넘어간다.
+  남은 이름이 셋 이하로 모이면 더 확대. '전체 보기'는 남은 이름 전부가 들어오게. 미니맵을 누르거나 끌면 4초 동안 그쪽을 본다.
+- **결승선 카메라**: 긴 코스에서 누군가 결승선 16m 안에 들어왔는데 본 화면에 결승선이 안 보이면 아래 24% 띠에 결승선 근처를 따로 그린다(0.4초 유지될 때만 전환).
+  본 화면은 띠에 가리는 만큼 내려서 무리가 가운데 오게.
+- 미니맵(왼쪽 위 88px 세로 띠): 코스 정적 부분은 한 번 그려 두고 이름 점·카메라 창만 매 프레임.
+- **당첨 칸**(가장 흔한 칸이 아닌 칸, `Render.specialLabels`): 결승선에서 앰버로 숨 쉬듯 빛나고, 들어가면 큰 당첨 화면(아래).
 
 ### 폰
 - lobby·welcome·start 메시지에 `course`. 폰은 같은 `Sim.buildMap(course)`로 검증·그리기.
 - 진행 중 호스트가 1초마다 `{t:'prog', p(0~1 진행도), r(지금 순위), s(구간), n(전체)}`를 보낸다 → "큰 화면을 보세요" 아래 순위 카드(진행 막대 + 구간 이름). 위치 스트리밍은 여전히 안 한다.
 - 도구 주의: 파일을 쓸 때 정규식 안에 역슬래시-u-200b 같은 유니코드 이스케이프를 쓰면 실제 보이지 않는 문자로 바뀌어 문법 오류가 난 적이 있다(이 문서도 같은 일을 겪음). 문자 범위는 `codePointAt` 비교로 쓴다.
+
+---
+
+## 네온 연출 (3차, 2026-10-30)
+
+### 그림
+- 바탕은 거의 검정(`COL.void #06040D`) + 구간 그림(`assets/stage1~6.webp`). 그림은 **보드 폭 30m에 맞춰** 그리고, 구간이 그림보다 25% 넘게 길면(1구간뿐)
+  세로로 이어 붙인다(위아래가 이어지게 만든 그림). 아니면 한 장을 구간 높이에 맞춰 늘린다. 그 위를 22% 어둡게 눌러 네온이 도드라지게.
+- 벽·경사판·풍차·시계추 = **네온관**: 'lighter'로 넓고 옅은 빛 두 겹 + 색 관 + 흰 심(`render.js neon`). shadowBlur는 매 프레임 쓰지 않는다.
+- 핀 = 구간 색으로 빛나는 금속 구 스프라이트. **이름이 세게(2.6m/s 이상) 부딪히면 하얗게 번쩍**(sim의 `spark` 이벤트 → `fx.light(el)`), 불꽃이 튄다.
+- 이름 스프라이트에 이름 색 빛 번짐을 구워 둔다. 빛 번짐은 **1/4 해상도에서 흐리게 그려 늘린다**(큰 글자를 그대로 흐리면 스프라이트 하나에 수십 ms).
+  확대 배율이 바뀌면 스프라이트를 다시 만드는데, 한 프레임에 4개까지(결승선 띠·전체 지도의 다른 단은 `keepBudget`으로 예산을 같이 씀).
+- 1등(가장 앞선 이름) 위에 왕관. 꼬리는 'lighter'.
+
+### 화면 구성 (호스트)
+- **대기실·설정 = 전체 지도**(`Render.overviewLayout/drawOverview`): 긴 코스를 구간 경계에서 잘라 1~4단으로 나란히 놓는다(화면에 가장 크게 들어가는 단 수·자를 곳을 고름).
+  단 사이·양옆은 옆판 그림(`side.webp`), 단과 단은 빛이 흐르는 점선 길로 잇는다. 이름·장애물은 첫 단에. `st.T`는 첫 단 좌표(폰 없는 사람 끌기).
+- **진행 중 = 보드가 화면 전체**(`.host.racing`, 오른쪽 설정 판은 접힘). 오른쪽에 HUD(`#hud`: 버튼, 시계, **전원 순위판**), 왼쪽 위에 미니맵.
+  보드는 둘 사이(안전 영역)에 오게 카메라 x를 맞춘다. HUD 폭은 `st.hudW`(화면 폭의 22%, 220~320px)를 CSS 변수 `--hud-w`로 넘긴다.
+- 카메라는 무리의 좌우 폭(양 끝 10% 제외)에 맞춰 **보이는 폭 31m ~ 17m로 천천히 확대**(`st.zoomW`, 시간 상수 약 0.6초).
+- 순위판(`#liveRank`, 4Hz + 도착 때 즉시): 도착한 이름(✓ 칸 이름, 당첨은 앰버) 다음에 떨어지는 이름을 지금 위치 순서로(구간 번호). 18명이 넘으면 `compact`.
+- 카운트다운: 전체 지도 첫 단에서 출발 지점으로 카메라가 다가가며 3·2·1, 출발 때 '출발!'.
+- 구간 진입: 가운데에 큰 구간 이름(`#stageTitle`, 투명도·이동만 애니메이션 — **filter를 움직이면 큰 빛 글자를 매 프레임 다시 그려 80ms 끊김**).
+- **도착 이펙트**(확정마다): 결승선에서 빛기둥(이름 색), 빛 알갱이가 솟구침, 레이저를 따라 퍼지는 고리, 'n등'이 튀어 오름(가까이서 여럿이면 한 줄씩 위로).
+- **당첨**: 화면 가운데 `#winFx`(당첨 + 이름 + 칸, 뒤를 어둡게 받침) 3.3초, 불꽃놀이 3발, 색종이, 화면 번쩍임·흔들림, 팡파르. 그동안 구간 제목은 건너뜀.
+- 빨간 알림(`#banner`)은 서든데스·가속·마무리만.
+
+### 성능 (호스트, 30명, 헤드리스 소프트웨어 렌더링)
+- 프레임 p50·p90 16.7ms, p99 17ms, 진행 중 최대 33ms. 카운트다운 시작에 글자 모양 추출로 한 번 66ms.
+- 그림은 불러올 때 `img.decode()`로 미리 풀어 둔다(처음 그릴 때 메인 스레드에서 풀면 수십 ms 멈춤).
+- `st.stats.slowTicks`: 우리 코드가 한 프레임에 40ms 넘게 쓴 경우를 기록(점검용). 프레임 간격은 긴데 여기 없으면 브라우저 그리기(CSS 등) 쪽 문제.
+
+### 이미지 에셋 (`assets/`)
+- `side.webp`(512×2064), `stage1~6.webp`(1536 폭), `icon-32/64/192.png`(투명 모서리 파비콘), `icon-180.png`(홈 화면용, 꽉 찬 사각형).
+- 원본은 `assets/originals/{side,stage1..6,icon}.png`(Gemini, git에 안 올림). `python test/build-assets.py`로 다시 만든다:
+  - **Gemini 워터마크**: 오른쪽 아래(중심이 가장자리에서 112.5px)에 흰 별을 최대 50% 불투명도로 섞는다. 알파 지도(`test/fixtures/gemini-watermark.png`, 값×2)로
+    섞기를 거꾸로 풀어(원래 = (보이는 색 − a×255)/(1 − a)) 밑그림을 그대로 되살린다. 흐리게 메우지 않음.
+  - stage1만 위아래 이음매 처리(겹치는 띠를 두 그림이 가장 비슷한 경로로 잘라 붙임 — 섞지 않아서 무늬가 겹쳐 보이지 않음).
+- 폰은 `stage1`만 불러온다(`Assets.load(['stage1'])`). 그림이 오면 `Assets.rev`가 올라가서 폰이 다시 그린다.
 
 ---
 
@@ -137,6 +180,8 @@ test/headless.js    물리 검증          test/stress.js      병렬 대량 검
 test/e2e.js         Playwright 종단    test/fakepeer.js    테스트용 가짜 Peer
 test/export-glyphs.js + test/fixtures/names.json   실제 글자 모양
 test/browser-batch.js  test/host-perf.js  test/server.js  test/browser.js
+test/build-assets.py  Gemini 원본 → assets/ (워터마크 지우기, 이음매, 아이콘)
+assets/             구간 그림·옆판·아이콘·링크 미리보기(og.jpg), manifest.json, README.md(프롬프트). originals/는 git에 안 올림
 .nojekyll
 ```
 
@@ -185,7 +230,8 @@ Sim.Segments     // 레이저 칸: list[{i,label,w,target,owner,closed}], bounds
 new Sim.Game({ seed, map, labels:[], names:[{id, polys, w, h, x}], obstacles:[{id, owner, kind, x, y, a}] })
   game.step()          // 1/120초 진행
   game.drainEvents()   // [{t:'confirm', id, seg, label, x, time} | {t:'hit'|'break'|'bounce'|'kick', id?, x, y}
-                       //  | {t:'unstick', id, level} | {t:'sudden'} | {t:'final'} | {t:'end'}]
+                       //  | {t:'unstick', id, level} | {t:'sudden', broke, busy} | {t:'rush'} | {t:'final'} | {t:'end'}
+                       //  | {t:'spark', id, x, y, v, el, kind}]  ← 맵 구조물에 2.6m/s 이상으로 부딪힘 (화면용, 이름당 0.12초에 한 번, 물리 영향 없음)
   game.over, game.t, game.names(Map: id → {body, done, ...}), game.obs(Map: id → {kind,x,y,a,hp,alive,flash}),
   game.mills[{el, body}], game.segments, game.results[{id, seg, label, x, t}]
 ```
@@ -336,7 +382,7 @@ new Sim.Game({ seed, map, labels:[], names:[{id, polys, w, h, x}], obstacles:[{i
   - `new Sim.Game`(시드는 crypto 랜덤, 블라인드면 라벨을 섞음).
   - 3, 2, 1 숫자를 보드에 크게 표시하고 폰에는 `start`를 보낸다.
 - **running**
-  - 패널: 경과 시간, "남은 이름 n / 남은 칸 m", 확정 순서대로 결과 목록, 카메라 토글(따라가기/전체), 소리 토글, "중단하고 대기실로".
+  - (3차) 보드가 화면 전체, 오른쪽 HUD: 경과 시간, "남은 이름 n / 남은 칸 m", 전원 순위판, 카메라 토글(따라가기/전체), 배속, 소리 토글, "중단하고 대기실로".
   - 이벤트 처리
     - `confirm`: 결과 목록 추가, 이펙트, 해당 폰에 `mine` 전송.
     - `sudden`: 배너 "서든데스! 유저 장애물이 모두 부서졌어요".
@@ -370,7 +416,7 @@ new Sim.Game({ seed, map, labels:[], names:[{id, polys, w, h, x}], obstacles:[{i
 
 ### 6. 디자인 토큰 (style.css에 반영됨)
 - 핀볼 캐비닛의 밤 분위기.
-  - 잉크: `#1B1530 / #140F26 / #221A3E / #2F2652`, 라인 `#463B73`
+  - 잉크: `#1B1530 / #140F26 / #221A3E / #2F2652`, 라인 `#463B73`, 보드 바깥·바탕 `#06040D`(void)
   - 크롬: `#C9CEDD`
   - **레이저: `#FF3B5C`(결승선 전용)**
   - 앰버: `#FFB547`(주요 버튼, "나" 강조)
@@ -381,10 +427,10 @@ new Sim.Game({ seed, map, labels:[], names:[{id, polys, w, h, x}], obstacles:[{i
 
 ### DOM ID (style.css가 전제하는 구조)
 - 호스트
-  - 레이아웃: `.host > .stage(#board, #banner.banner, #overlay.overlay > .result-card) + aside.panel`
+  - 레이아웃: `.host(.racing) > .stage(#board, #hud, #stageTitle, #winFx(#winName #winLabel), #banner.banner, #overlay.overlay > .result-card) + aside.panel`
   - `#hSetup`: `#labels #labelsHint #obsMinus #obsOut #obsPlus #blind #setupErr #openRoom`, `details.joinbox`
   - `#hLobby`: `.lobby-head #net`, `.join > .qr-box > #qr`, `#code #joinUrl`, `.counts #cPlayers #cReady #cSlots`, `#plist`, `#addForm #addName`, `#lobbyErr #startBtn #editSetup`
-  - `#hRun`: `#clock #runSub #results #camBtn #soundBtn #abortBtn`
+  - `#hud`(진행 중, 보드 위): `#camBtn #speedBtn #soundBtn #clock #runSub #liveWrap > #liveRank #abortBtn`
   - 결과: `#finalList #leftover #againBtn #copyBtn #resetBtn`
 - 폰
   - 레이아웃: `.phone > header.p-head(#pCode #pNet #pMe > #pMeName) + main#pMain`

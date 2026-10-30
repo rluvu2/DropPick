@@ -356,6 +356,7 @@
   }
 
   // ---------- 게임 ----------
+  const SPARK_TYPES = { pin: 1, wall: 1, deflector: 1, mill: 1, mover: 1, disc: 1 };   // 'spark' 화면 이벤트를 내는 맵 구조물
   class Game {
     /* opts: { seed, map, labels[], names[{id, polys, w, h, x}], obstacles[{id, owner, kind, x, y, a}] } */
     constructor(opts) {
@@ -390,14 +391,14 @@
 
     _buildStatics() {
       const ground = this.world.createBody({ type: 'static' });
-      for (const el of this.map.els) {
+      this.map.els.forEach((el, i) => {
         if (el.kind === 'wall' || el.kind === 'deflector') {
           const [ax, ay] = el.a, [bx, by] = el.b;
           const len = Math.hypot(bx - ax, by - ay);
           ground.createFixture(new planck.Box(len / 2, el.r, { x: (ax + bx) / 2, y: (ay + by) / 2 }, Math.atan2(by - ay, bx - ax)),
-            { friction: 0.15, restitution: 0.2, userData: { type: el.kind } });
+            { friction: 0.15, restitution: 0.2, userData: { type: el.kind, el: i } });
         } else if (el.kind === 'pin') {
-          ground.createFixture(new planck.Circle({ x: el.c[0], y: el.c[1] }, el.r), { friction: 0.1, restitution: 0.45, userData: { type: 'pin' } });
+          ground.createFixture(new planck.Circle({ x: el.c[0], y: el.c[1] }, el.r), { friction: 0.1, restitution: 0.45, userData: { type: 'pin', el: i } });
         } else if (el.kind === 'bumper') {
           ground.createFixture(new planck.Circle({ x: el.c[0], y: el.c[1] }, el.r), { friction: 0.05, restitution: 0.6, userData: { type: 'mbumper', c: el.c } });
         } else if (el.kind === 'mill') {
@@ -420,7 +421,7 @@
           }
           this.movers.push({ el, body: b });
         }
-      }
+      });
     }
 
     _addObstacle(o) {
@@ -461,7 +462,7 @@
         id: n.id, order, body, w: n.w || 1, h: n.h || 1, done: false,
         prevX: c.x, prevY: c.y, hist: [], stuckLevel: 0, lastUnstick: -99,
         bestY: c.y, bestYAt: 0, stalls: 0, phaseUntil: 0,
-        ghostUntil: 0, noCollide: false, lastMapKick: -9, result: null, exit: null,
+        ghostUntil: 0, noCollide: false, lastMapKick: -9, lastSpark: -9, result: null, exit: null,
       });
     }
 
@@ -499,12 +500,16 @@
       if (o && o.kind === 'tramp' && !this._above(o, n)) c.setEnabled(false); // 트램펄린은 아래에서 올라오면 통과
     }
 
+    // 유저 장애물·맵 범퍼는 스텝 뒤에 처리할 충돌로 기록한다.
+    // 핀·벽·경사판·움직이는 부품에 세게 부딪히면 화면용 'spark' 이벤트만 낸다 (핀이 반짝이고 불꽃이 튐, 물리에는 영향 없음)
     _onBegin(c) {
       const p = this._pair(c);
       if (!p || p.both) return;
-      if (p.ou.type !== 'uobs' && p.ou.type !== 'mbumper') return;
+      const type = p.ou.type, rule = type === 'uobs' || type === 'mbumper';
+      if (!rule && !SPARK_TYPES[type]) return;
       const n = this.names.get(p.nu.id);
       if (!n || n.done || this._phasing(n)) return;
+      if (!rule && this.t - n.lastSpark < 0.12) return;
       const nb = p.nf.getBody(), ob = p.of.getBody();
       const wm = c.getWorldManifold(null);
       const pt = (wm && wm.points && wm.points[0]) || nb.getWorldCenter();
@@ -512,7 +517,10 @@
       let nx = wm ? wm.normal.x : 0, ny = wm ? wm.normal.y : 0;
       if (p.nameIsA) { nx = -nx; ny = -ny; }   // 장애물 → 이름 방향
       const approach = -((vn.x - vo.x) * nx + (vn.y - vo.y) * ny);
-      this.hits.push({ nameId: n.id, ou: p.ou, approach, x: pt.x, y: pt.y });
+      if (rule) { this.hits.push({ nameId: n.id, ou: p.ou, approach, x: pt.x, y: pt.y }); return; }
+      if (approach < 2.6) return;
+      n.lastSpark = this.t;
+      this.events.push({ t: 'spark', id: n.id, x: pt.x, y: pt.y, v: Math.round(approach * 10) / 10, el: p.ou.el === undefined ? -1 : p.ou.el, kind: type });
     }
 
     _launch(n, dir, speed) {

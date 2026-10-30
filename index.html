@@ -13,7 +13,10 @@
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23140F26'/%3E%3Ccircle cx='16' cy='11' r='5' fill='%23FFB547'/%3E%3Cpath d='M4 24h7M13 24h6M21 24h7' stroke='%23FF3B5C' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="assets/icon-64.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
@@ -25,6 +28,26 @@
   <div class="host">
     <div class="stage">
       <canvas id="board" aria-label="게임 보드"></canvas>
+      <!-- 진행 중 화면: 보드가 화면을 다 쓰고, 오른쪽에 시계·순위·버튼을 겹쳐 놓는다 -->
+      <div id="hud" class="hud hidden">
+        <div class="hud-tools">
+          <button id="camBtn" class="icon-btn" type="button">따라가기</button>
+          <button id="speedBtn" class="icon-btn" type="button">1배속</button>
+          <button id="soundBtn" class="icon-btn" type="button">소리 켬</button>
+        </div>
+        <div class="clock-row"><span id="clock" class="clock">0.0</span><span class="clock-unit">초</span></div>
+        <p id="runSub" class="sub">남은 이름 0 / 남은 칸 0</p>
+        <div id="liveWrap" class="live hidden">
+          <ol id="liveRank" class="live-rank"></ol>
+        </div>
+        <button id="abortBtn" class="link danger" type="button">중단하고 대기실로</button>
+      </div>
+      <div id="stageTitle" class="stage-title" aria-hidden="true"></div>
+      <div id="winFx" class="win-fx hidden" role="status">
+        <span class="win-tag">당첨</span>
+        <b id="winName"></b>
+        <span id="winLabel" class="win-label"></span>
+      </div>
       <div id="banner" class="banner" role="status"></div>
       <div id="overlay" class="overlay hidden">
         <div class="result-card">
@@ -112,27 +135,6 @@
         <div class="actions">
           <button id="startBtn" class="btn primary big" type="button">시작</button>
           <button id="editSetup" class="link" type="button">설정 바꾸기</button>
-        </div>
-      </section>
-
-      <section id="hRun" class="pane hidden">
-        <div class="lobby-head">
-          <h1 id="runTitle" class="title small">진행 중</h1>
-          <div class="head-tools">
-            <button id="camBtn" class="icon-btn" type="button">따라가기</button>
-            <button id="speedBtn" class="icon-btn" type="button">1배속</button>
-            <button id="soundBtn" class="icon-btn" type="button">소리 켬</button>
-          </div>
-        </div>
-        <div class="clock-row"><span id="clock" class="clock">0.0</span><span class="clock-unit">초</span></div>
-        <p id="runSub" class="sub">남은 이름 0 / 남은 칸 0</p>
-        <div id="liveWrap" class="live hidden">
-          <span class="field-label">지금 앞서가는 이름</span>
-          <ol id="liveRank" class="live-rank"></ol>
-        </div>
-        <ol id="results" class="results"></ol>
-        <div class="actions">
-          <button id="abortBtn" class="link danger" type="button">중단하고 대기실로</button>
         </div>
       </section>
     </aside>

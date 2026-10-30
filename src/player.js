@@ -415,6 +415,7 @@
     });
   }
   function loop() {
+    if (Render.Assets.rev !== st.assetRev) { st.assetRev = Render.Assets.rev; st.dirty = true; }   // 바닥 그림이 도착하면 다시 그림
     if (st.screen === 'pLobby' && st.dirty) {
       st.dirty = false;
       try { draw(); } catch (e) { console.error(e); }

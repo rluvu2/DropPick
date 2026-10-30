@@ -30,6 +30,7 @@
     acc: 0, countStart: 0, lastCount: 0, doneAt: 0,
     follow: true, cam: null, fx: new Render.Fx(), T: null, panelDirty: true,
     speed: 1, trails: new Map(), stageSeen: 0, pack: null, focusY: null, inset: false, insetSince: 0, special: new Set(), manual: null, liveAt: 0, progAt: 0, mmRect: null,
+    zoomW: null, leaderId: null, goAt: 0, ovT: null, hudW: 0,
     startArmed: false, abortArmed: false, drag: null, stats: { frames: 0, slowFrames: 0, maxSteps: 0, stepMs: 0, steps: 0 },
   };
 
@@ -295,12 +296,14 @@
     st.game = null; st.acc = 0;
     st.countStart = performance.now(); st.lastCount = 0;
     st.fx = new Render.Fx(st.map.F);
-    st.cam = null; st.manual = null;
+    // 카메라는 전체 지도의 첫 단(출발 지점)에서 시작해 출발 지점으로 다가간다
+    const cv = $('board'), bw = cv.clientWidth, bh = cv.clientHeight, T0 = st.ovT;
+    st.cam = T0 ? { x0: T0.mx(0), x1: T0.mx(bw), y0: T0.my(0), y1: T0.my(bh) } : null;
+    st.manual = null; st.zoomW = null; st.leaderId = null; st.goAt = 0;
     st.trails = new Map(); st.stageSeen = 0; st.pack = null; st.focusY = null; st.inset = false;
     const token = ++st.runToken;
     Render.Sound.unlock();
     for (const p of parts) send(p, { t: 'start', course: st.map.id });
-    $('results').innerHTML = '';
     $('liveRank').innerHTML = '';
     show('liveWrap', false);
     showPanel();
@@ -332,23 +335,40 @@
     const g = st.game, fx = st.fx;
     switch (e.t) {
       case 'confirm': {
-        const p = byId(e.id), color = p ? p.color : Render.COL.amber;
-        const order = st.results.length + 1;
-        st.results.push({ id: e.id, name: p ? p.name : '?', color, label: e.label, seg: e.seg, t: e.time });
+        // 도착: 결승선에서 빛기둥이 솟고, 이름 색 불꽃이 튀고, 레이저를 따라 물결이 퍼지고, 'n등'이 튀어 오른다
+        const p = byId(e.id), color = p ? p.color : Render.COL.amber, name = p ? p.name : '?';
+        const order = st.results.length + 1, win = st.special.has(e.label), F = st.map.F;
+        const x = Math.max(1.5, Math.min(C.W - 1.5, e.x));
+        st.results.push({ id: e.id, name, color, label: e.label, seg: e.seg, t: e.time });
         st.lastResults[e.id] = { label: e.label, seg: e.seg, order };
         fx.laser(e.x);
-        fx.float(Math.max(1.5, Math.min(C.W - 1.5, e.x)), e.label, color);
-        Render.Sound.play('confirm');
+        fx.pillar(e.x, win ? Render.COL.amber : color, win);
+        fx.burst(e.x, F - 0.15, color, win ? 70 : 30, win ? 1.35 : 1);
+        fx.pulse(e.x, win ? Render.COL.amber : color, win);
+        fx.badge(x, order + '등', color);
+        if (win) fx.float(x, e.label, Render.COL.amber);
+        Render.Sound.play('confirm', order);
         if (p) send(p, { t: 'mine', label: e.label, seg: e.seg, order });
-        addResultRow(order, p ? p.name : '?', color, e.label, st.special.has(e.label));
         st.trails.delete(e.id);
-        if (st.special.has(e.label)) {
-          banner(`${p ? p.name : '?'}: ${e.label}!`, 'win');
-          fx.confetti(Math.max(2, Math.min(C.W - 2, e.x)), st.map.F - 0.4, 70);
-          fx.pulse(e.x, Render.COL.amber);
-          fx.shake = 0.6;
+        st.liveAt = 0;   // 순위판을 바로 다시 그린다
+        if (win) {
+          showWin(name, e.label, color);
+          fx.confetti(x, F - 0.4, 90);
+          for (let i = 0; i < 3; i++) fx.firework(4 + Math.random() * (C.W - 8), F - 7 - Math.random() * 6);
+          fx.screen(Render.COL.amber, 0.5);
+          fx.shake = 0.8;
           Render.Sound.play('win');
-        } else fx.pulse(e.x, color);
+        } else if (order === 1) {
+          fx.screen(color, 0.22);
+        }
+        break;
+      }
+      case 'spark': {
+        // 핀·벽에 세게 부딪힘: 핀은 하얗게 번쩍, 부딪힌 자리에 이름 색 불꽃
+        const p = byId(e.id), color = p ? p.color : Render.COL.chrome, strong = e.v > 5;
+        if (e.kind === 'pin' && e.el >= 0) { fx.light(e.el); Render.Sound.play('pin'); }
+        fx.sparks(e.x, e.y, color, strong ? 6 : 3, strong ? 0.8 : 0.55);
+        if (strong) fx.flare(e.x, e.y, color);
         break;
       }
       case 'hit': fx.ring(e.x, e.y, Render.COL.brick, 0.6); Render.Sound.play('hit'); break;
@@ -382,7 +402,7 @@
   function endGame() {
     st.phase = 'done';
     st.doneAt = performance.now();
-    show('liveWrap', false);
+    renderLiveRank([]);
     const results = st.results.map(r => ({ name: r.name, color: r.color, label: r.label }));
     for (const p of st.players) if (p.conn) send(p, { t: 'end', results });
     showPanel();
@@ -406,25 +426,49 @@
 
   // ---------- 화면 ----------
   function show(id, on) { const el = $(id); if (el) el.classList.toggle('hidden', !on); }
+  const racing = () => st.phase === 'countdown' || st.phase === 'running' || st.phase === 'done';
   function showPanel() {
     show('hSetup', st.phase === 'setup');
     show('hLobby', st.phase === 'lobby');
-    show('hRun', st.phase === 'countdown' || st.phase === 'running' || st.phase === 'done');
+    // 진행 중에는 오른쪽 판을 접고 보드가 화면을 다 쓴다 (시계·순위는 보드 위에 겹침)
+    document.querySelector('.host').classList.toggle('racing', racing());
+    show('hud', racing());
+    if (!racing()) { $('winFx').classList.add('hidden'); $('stageTitle').classList.remove('go'); }
     $('openRoom').textContent = st.roomOpen ? '적용' : '방 열기';
     show('cancelEdit', st.roomOpen);
     show('joinbox', !st.roomOpen);
     if (!st.abortArmed) $('abortBtn').textContent = st.phase === 'done' ? '대기실로' : '중단하고 대기실로';
-    $('runTitle').textContent = st.phase === 'countdown' ? '곧 시작해요' : st.phase === 'done' ? '끝' : '진행 중';
     st.panelDirty = true;
   }
-  // kind: '' (빨강, 경고) | 'stage' (구간 진입) | 'win' (당첨)
-  function banner(text, kind) {
+  // 빨간 알림 (서든데스·가속·마무리)
+  function banner(text) {
     const b = $('banner');
-    if (kind === 'stage' && b.classList.contains('on') && b.classList.contains('win')) return;   // 당첨 알림을 덮지 않는다
     b.textContent = text;
-    b.className = 'banner on' + (kind ? ' ' + kind : '');
+    b.className = 'banner on';
     clearTimeout(banner.t);
-    banner.t = setTimeout(() => b.classList.remove('on'), kind === 'win' ? 3800 : 3000);
+    banner.t = setTimeout(() => b.classList.remove('on'), 3000);
+  }
+  // 다시 시작하는 CSS 애니메이션
+  function replay(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+  function showWin(name, label, color) {
+    const el = $('winFx');
+    $('winName').textContent = name;
+    $('winLabel').textContent = label;
+    el.style.setProperty('--c', color);
+    el.classList.remove('hidden');
+    $('stageTitle').classList.remove('go');   // 구간 제목과 겹치지 않게
+    replay(el, 'go');
+    clearTimeout(showWin.t);
+    showWin.t = setTimeout(() => el.classList.add('hidden'), 3300);
+  }
+  function showStageTitle(i) {
+    if (!$('winFx').classList.contains('hidden')) return;   // 당첨 화면이 떠 있으면 구간 제목은 건너뛴다
+    const el = $('stageTitle'), s = st.map.stages[i];
+    el.innerHTML = '<small></small><span></span>';
+    el.firstChild.textContent = `${i + 1}구간`;
+    el.lastChild.textContent = s.name;
+    el.style.setProperty('--g', Render.themeOf(i).glow);
+    replay(el, 'go');
   }
   function hideOverlay() { $('overlay').classList.add('hidden'); }
 
@@ -500,18 +544,6 @@
     const left = g ? g.remaining : st.parts.length, open = g ? g.segments.openCount() : st.labels.length;
     $('runSub').textContent = `남은 이름 ${left} / 남은 칸 ${open}`;
   }
-  function addResultRow(order, name, color, label, win) {
-    const li = document.createElement('li');
-    li.className = 'new' + (win ? ' win' : '');
-    li.style.setProperty('--c', color);
-    li.innerHTML = '<span class="ord"></span><span class="nm"></span><span class="lb"></span>';
-    li.children[0].textContent = order;
-    li.children[1].textContent = name;
-    li.children[2].textContent = label;
-    const ol = $('results');
-    ol.appendChild(li);
-    li.scrollIntoView({ block: 'nearest' });
-  }
   function showResults() {
     const ul = $('finalList');
     ul.innerHTML = '';
@@ -573,14 +605,10 @@
     }
     return out;
   }
-  // 대기실·카운트다운: 1구간 전체. 긴 코스는 결승선을 1구간 바로 아래에 줄여서 보여준다
-  function lobbyView(map, top) {
-    const y1 = map.id === 'short' ? C.VIEW.y1 : Render.LOBBY.finish + C.LABEL_BAND + 0.7;
-    return { x0: C.VIEW.x0, x1: C.VIEW.x1, y0: Math.min(C.VIEW.y0, top - 1.4), y1 };
-  }
-  // 진행 중: 보드 폭을 꽉 채우고 선두를 따라간다(앞을 조금 더 보여줌). 남은 이름이 셋 이하로 모여 있으면 확대.
-  // '전체 보기'는 남은 이름이 모두 들어오게. 미니맵을 끌면 4초 동안 그쪽을 본다. 오른쪽은 미니맵 자리로 비운다.
-  // 지금 보고 있는 무리를 계속 따라가다가, 다른 곳에 3명 이상 더 모인 무리가 생기면 그쪽으로 넘어간다
+  // 진행 중 카메라: 가장 많이 모인 무리를 따라간다. 지금 보는 무리를 유지하다가 다른 곳에 3명 이상 더 모이면 넘어간다.
+  // 무리가 좁게 모여 있으면 그만큼 확대한다(보이는 폭 31m ~ 17m, 천천히). 남은 이름이 셋 이하로 모이면 더 확대.
+  // '전체 보기'는 남은 이름이 모두 들어오게. 미니맵을 끌면 4초 동안 그쪽을 본다.
+  // 보드는 왼쪽 미니맵과 오른쪽 순위판 사이(안전 영역)에 오게 한다
   function packCenter(names, Hv) {
     const ys = names.map(n => n.y).sort((a, b) => b - a);   // 앞(아래)부터
     let best = null;
@@ -594,40 +622,55 @@
     st.pack = cur.length && best.cnt < cur.length + 3 ? cur.reduce((a, b) => a + b, 0) / cur.length : best.cy;
     return st.pack + Hv * 0.08;   // 가는 쪽(아래)을 조금 더
   }
-  function raceView(names, w, h, now, insetFrac) {
+  function safeArea(w) {
+    const left = st.mmRect ? st.mmRect.x + st.mmRect.w + 12 : 0;
+    return { left, right: Math.max(left + 240, w - st.hudW) };
+  }
+  // dt가 0이면(결승선 띠를 붙일지 미리 볼 때) 확대 상태를 바꾸지 않는다
+  function raceView(names, w, h, now, insetFrac, dt) {
     insetFrac = insetFrac || 0;
-    const F = st.map.F, mmw = st.mmRect ? st.mmRect.w + 28 : 0;
-    const usable = Math.max(200, w - mmw), aspect = usable / Math.max(1, h);
+    const F = st.map.F, { left, right } = safeArea(w), sw = right - left, visH = h * (1 - insetFrac);
     const top = names.reduce((m, n) => Math.min(m, n.y), C.START_Y);
     const lo = Math.min(C.VIEW.y0, top - 1.4), hi = F + C.LABEL_BAND + 0.8;
-    let width = C.W + 1.2, cx = C.W / 2, H = width / aspect, cy;
+    const FULL = C.W + 1.2, Hfull = FULL * visH / sw;   // 보드 폭 전체를 보여줄 때 보이는 높이
+    let Wv = FULL, cx = C.W / 2, cy = null, needH = 0;
     if (st.manual && now < st.manual.until) cy = st.manual.y;
     else if (!names.length) cy = F;
     else if (!st.follow) {
       let y0 = Infinity, y1 = -Infinity;
       for (const n of names) { y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); }
-      if (y1 - y0 + 7 > H) { H = y1 - y0 + 7; width = H * aspect; }
       cy = (y0 + y1) / 2 + 0.5;
+      needH = y1 - y0 + 7;
     } else {
-      cy = null;
       if (names.length <= 3) {
         let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
         for (const n of names) { x0 = Math.min(x0, n.x); x1 = Math.max(x1, n.x); y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); }
-        if (y1 - y0 < 9) {
-          width = Math.max(16, Math.min(C.W + 1.2, x1 - x0 + 12));
-          H = width / aspect;
-          cx = Math.max(width / 2 - 0.6, Math.min(C.W + 0.6 - width / 2, (x0 + x1) / 2));
-          cy = (y0 + y1) / 2 + 1;
+        if (y1 - y0 < 9) { Wv = Math.max(15, Math.min(FULL, x1 - x0 + 11)); cx = (x0 + x1) / 2; cy = (y0 + y1) / 2 + 1; }
+      }
+      if (cy === null) {
+        cy = packCenter(names, Hfull);
+        // 무리의 좌우 폭(양 끝 10%는 빼고)만큼만 보여준다
+        const xs = names.filter(n => Math.abs(n.y - st.pack) <= Hfull * 0.5).map(n => n.x).sort((a, b) => a - b);
+        if (xs.length) {
+          const cut = xs.length >= 6 ? Math.floor(xs.length * 0.1) : 0, xa = xs[cut], xb = xs[xs.length - 1 - cut];
+          Wv = Math.max(17, Math.min(FULL, xb - xa + 10));
+          cx = (xa + xb) / 2;
         }
       }
-      if (cy === null) cy = packCenter(names, H * (1 - insetFrac));
     }
-    st.focusY = cy;
-    cy += H * insetFrac / 2;   // 아래 결승선 띠에 가리는 만큼 내려서, 보이는 부분 가운데에 오게
-    const a = lo + H / 2, b = hi - H / 2;
+    // 확대·축소는 천천히 (무리가 흩어졌다 모일 때마다 화면이 숨 쉬지 않게)
+    if (dt) st.zoomW = st.zoomW === null ? Wv : st.zoomW + (Wv - st.zoomW) * (1 - Math.exp(-dt * 1.6));
+    if (st.zoomW !== null) Wv = st.zoomW;
+    let k = sw / Wv;
+    if (needH) k = Math.min(k, visH / needH);
+    const vw = sw / k, Hs = h / k;
+    cx = vw >= FULL ? C.W / 2 : Math.max(vw / 2 - 0.6, Math.min(C.W + 0.6 - vw / 2, cx));
+    if (dt) st.focusY = cy;
+    cy += Hs * insetFrac / 2;   // 아래 결승선 띠에 가리는 만큼 내려서, 보이는 부분 가운데에 오게
+    const a = lo + Hs / 2, b = hi - Hs / 2;
     cy = a > b ? (lo + hi) / 2 : Math.max(a, Math.min(b, cy));
-    const extra = mmw ? width * mmw / usable : 0;
-    return { x0: cx - width / 2, x1: cx + width / 2 + extra, y0: cy - H / 2, y1: cy + H / 2 };
+    const x0 = cx - vw / 2 - left / k;
+    return { x0, x1: x0 + w / k, y0: cy - Hs / 2, y1: cy + Hs / 2 };
   }
   function smooth(cam, t, dt) {
     if (!cam) return Object.assign({}, t);
@@ -636,9 +679,10 @@
     for (const k of ['x0', 'x1', 'y0', 'y1']) cam[k] += (t[k] - cam[k]) * a;
     return cam;
   }
+  // 미니맵은 왼쪽 위 (오른쪽은 순위판)
   function mmRectFor(map, w, h) {
     const mw = 88, mh = Math.min(h - 28, mw * (map.F + 10) / (C.W + 2));
-    return { x: w - mw - 14, y: 14, w: mw, h: mh };
+    return { x: 14, y: 14, w: mw, h: mh };
   }
 
   function segsForDraw() {
@@ -651,73 +695,108 @@
   function draw(dt, now) {
     const cv = $('board');
     const { ctx, w, h } = Render.setupCanvas(cv);
-    const map = mapNow(), clock = now / 1000, g = st.game;
-    const inGame = g && (st.phase === 'running' || st.phase === 'done' || st.phase === 'countdown');
-    const lobbyLike = !inGame || st.phase === 'countdown';
-    const names = inGame ? gameNames() : st.phase === 'setup' && !st.roomOpen ? [] : lobbyNames();
-    st.mmRect = map.id === 'short' ? null : mmRectFor(map, w, h);
+    const map = mapNow(), clock = now / 1000;
+    // 진행 중에만 오른쪽에 순위판 (폭은 여기서 정하고 CSS 변수로 넘긴다)
+    const hudW = racing() ? Math.round(Math.max(220, Math.min(320, w * 0.22))) : 0;
+    if (hudW !== st.hudW) {
+      st.hudW = hudW;
+      const host = document.querySelector('.host');
+      if (hudW) host.style.setProperty('--hud-w', hudW + 'px'); else host.style.removeProperty('--hud-w');
+    }
+    if (racing()) drawRace(ctx, w, h, map, clock, now, dt);
+    else drawLobby(ctx, w, h, map, clock);
+  }
+
+  // 설정·대기실: 코스 전체를 몇 단으로 나란히 (장애물 설치는 폰에서 하니 1구간만 키울 필요 없음). 이름·장애물은 첫 단에 있다
+  function drawLobby(ctx, w, h, map, clock) {
+    const names = st.phase === 'setup' && !st.roomOpen ? [] : lobbyNames();
     const top = names.reduce((m, n) => Math.min(m, n.y), C.START_Y);
+    const lay = Render.overviewLayout(map, w, h, top);
+    st.T = st.ovT = lay.cols[0].T;   // 폰 없는 사람 끌기는 첫 단 좌표로
+    st.mmRect = null;
+    Render.drawOverview(ctx, w, h, lay, {
+      map, clock, now: 0,
+      special: Render.specialLabels(st.phase === 'setup' ? parseLabels($('labels').value).labels : st.labels),
+      mills: map.els.filter(e => e.kind === 'mill').map(el => ({ el, angle: el.speed * clock })),
+      movers: map.els.filter(e => e.kind === 'pendulum' || e.kind === 'slider' || e.kind === 'disc').map(el => Object.assign({ el }, Sim.moverPose(el, clock))),
+      obstacles: st.obstacles, colorOf, names,
+      segs: segsForDraw(), blind: st.setup.blind && st.phase !== 'setup',
+      showZone: st.setup.obsPer > 0, showStart: true, showMillRange: true,
+    });
+    Render.drawVignette(ctx, w, h, 0.3);
+  }
+
+  function drawRace(ctx, w, h, map, clock, now, dt) {
+    const g = st.game, live = !!g && st.phase !== 'countdown';
+    const names = g ? gameNames() : lobbyNames();
+    st.mmRect = map.id === 'short' ? null : mmRectFor(map, w, h);
     // 결승선 띠: 긴 코스에서 본 화면에 결승선이 안 보일 때 아래에 결승선 카메라를 붙인다 (0.4초 넘게 같은 상태일 때만 전환)
     const ih = Math.round(Math.min(h * 0.24, 210)), frac = ih / h;
-    if (!lobbyLike && map.id !== 'short' && names.length) {
-      const probe = raceView(names, w, h, now, st.inset ? frac : 0);
-      const want = probe.y1 - (probe.y1 - probe.y0) * (st.inset ? frac : 0) < map.F - 0.5;
+    if (live && map.id !== 'short' && names.length) {
+      // 누군가 결승선 16m 안으로 들어왔는데 본 화면에 결승선이 안 보일 때만 (그 전엔 화면을 다 쓴다)
+      const probe = raceView(names, w, h, now, st.inset ? frac : 0, 0);
+      const near = names.some(n => n.y > map.F - 16) || st.results.length > 0;
+      const want = near && probe.y1 - (probe.y1 - probe.y0) * (st.inset ? frac : 0) < map.F - 0.5;
       if (want !== st.inset) { if (!st.insetSince) st.insetSince = now; if (now - st.insetSince > 400) { st.inset = want; st.insetSince = 0; } }
       else st.insetSince = 0;
     } else { st.inset = false; st.insetSince = 0; }
-    st.cam = smooth(st.cam, lobbyLike ? lobbyView(map, top) : raceView(names, w, h, now, st.inset ? frac : 0), dt);
-    const T = st.T = Render.makeT(w, h, st.cam, lobbyLike ? 14 : 0);
-    const cutView = lobbyLike && map.id !== 'short';
+    st.cam = smooth(st.cam, raceView(names, w, h, now, st.inset ? frac : 0, dt), dt);
+    const T = st.T = Render.makeT(w, h, st.cam, 0);
     let countdown = null;
     if (st.phase === 'countdown') { const el = (now - st.countStart) / 1000; countdown = { n: Math.max(1, COUNT_SEC - Math.floor(el)), f: el % 1 }; }
-    const lobbyish = st.phase === 'lobby' || st.phase === 'setup';
+    else if (st.goAt && now - st.goAt < 800) countdown = { n: 0, f: (now - st.goAt) / 800 };
     const shake = st.fx.shake;
-    if (shake > 0) { ctx.save(); ctx.translate((Math.random() - 0.5) * 9 * shake, (Math.random() - 0.5) * 9 * shake); }
+    if (shake > 0) { ctx.save(); ctx.translate((Math.random() - 0.5) * 12 * shake, (Math.random() - 0.5) * 12 * shake); }
     const scene = {
-      map, view: st.cam, clock, now: g ? g.t : 0, special: st.game ? st.special : Render.specialLabels(st.phase === 'setup' ? parseLabels($('labels').value).labels : st.labels),
+      map, view: st.cam, clock, now: g ? g.t : 0, special: g ? st.special : Render.specialLabels(st.labels),
       mills: g ? g.mills.map(m => ({ el: m.el, angle: m.body.getAngle() })) : map.els.filter(e => e.kind === 'mill').map(el => ({ el, angle: el.speed * clock })),
       movers: g ? g.movers.map(m => { const p = m.body.getPosition(); return { el: m.el, x: p.x, y: p.y, a: m.body.getAngle() }; })
         : map.els.filter(e => e.kind === 'pendulum' || e.kind === 'slider' || e.kind === 'disc').map(el => Object.assign({ el }, Sim.moverPose(el, clock))),
       obstacles: g ? [...g.obs.values()] : st.obstacles,
-      colorOf, names,
-      trails: inGame && !lobbyLike ? [...st.trails.entries()].map(([id, pts]) => ({ color: colorOf(id), pts })) : null,
-      segs: segsForDraw(), blind: st.setup.blind && st.phase !== 'setup',
-      finishAt: cutView ? Render.LOBBY.finish : undefined,
-      cut: cutView ? Object.assign({ text: Render.cutText(map) }, Render.LOBBY.cut) : null,
-      showZone: lobbyish && st.setup.obsPer > 0, showStart: lobbyLike, showMillRange: lobbyish,
-      fx: st.fx, countdown,
+      colorOf, names, leader: live && st.phase === 'running' ? st.leaderId : null,
+      trails: live ? [...st.trails.entries()].map(([id, pts]) => ({ color: colorOf(id), pts })) : null,
+      segs: segsForDraw(), blind: st.setup.blind,
+      showStart: st.phase === 'countdown', fx: st.fx, countdown,
     };
     Render.drawScene(ctx, T, scene);
     if (shake > 0) ctx.restore();
     if (st.inset) drawInset(ctx, w, h, ih, scene);
+    Render.drawVignette(ctx, w, h, 0.42);
+    if (st.fx.flash > 0) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = Render.alpha(st.fx.flashColor, st.fx.flash * 0.4);
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = 'source-over';
+    }
     if (st.mmRect) {
-      let lead = null;
-      for (const n of names) if (!lead || n.y > lead.y) lead = n;
-      Render.drawMinimap(ctx, st.mmRect, { map, view: lobbyLike ? null : st.cam, names: names.map(n => ({ x: n.x, y: n.y, color: n.color, lead: n === lead && !lobbyLike })) });
+      Render.drawMinimap(ctx, st.mmRect, { map, view: st.cam, names: names.map(n => ({ x: n.x, y: n.y, color: n.color, lead: live && n.id === st.leaderId })) });
     }
   }
 
-  // 아래 띠에 결승선 카메라: 보드 폭 전체, 결승선 위 3.6m부터 칸 이름까지
+  // 아래 띠에 결승선 카메라: 안전 영역 폭에 보드 폭 전체, 결승선 위 몇 m부터 칸 이름까지
   function drawInset(ctx, w, h, ih, scene) {
-    const mmw = st.mmRect ? st.mmRect.w + 28 : 0, iw = Math.max(200, w - mmw), F = st.map.F, y = h - ih;
-    // 보드 폭을 띠 폭에 꽉 맞추고, 남는 높이만큼 결승선 위를 보여준다
+    const { left, right } = safeArea(w), iw = right - left, F = st.map.F, y = h - ih;
     const vh = (C.W + 1.2) * ih / iw, vy1 = F + C.LABEL_BAND + 0.5;
     const view = { x0: -0.6, x1: C.W + 0.6, y0: vy1 - vh, y1: vy1 };
     ctx.save();
-    ctx.beginPath(); ctx.rect(0, y, iw, ih); ctx.clip();
-    ctx.translate(0, y);
-    Render.drawScene(ctx, Render.makeT(iw, ih, view, 0), Object.assign({}, scene, { view, trails: scene.trails }));
+    ctx.beginPath(); ctx.rect(left, y, iw, ih); ctx.clip();
+    ctx.translate(left, y);
+    Render.drawScene(ctx, Render.makeT(iw, ih, view, 0), Object.assign({}, scene, { view, leader: null, countdown: null, keepBudget: true }));
     ctx.restore();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = Render.alpha(Render.COL.laser, 0.35);
+    ctx.fillRect(left, y - 3, iw, 6);
+    ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = Render.COL.laser;
-    ctx.fillRect(0, y - 1, iw, 2);
+    ctx.fillRect(left, y - 1, iw, 2);
     ctx.font = '700 12px "IBM Plex Sans KR", sans-serif';
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     const label = '결승선';
     const tw = ctx.measureText(label).width;
     ctx.fillStyle = Render.COL.laser;
-    ctx.fillRect(10, y + 8, tw + 14, 20);
+    ctx.fillRect(left + 10, y + 8, tw + 14, 20);
     ctx.fillStyle = '#fff';
-    ctx.fillText(label, 17, y + 11);
+    ctx.fillText(label, left + 17, y + 11);
   }
 
   // ---------- 진행 중 부가 정보 ----------
@@ -736,29 +815,39 @@
     for (const n of st.game.names.values()) if (!n.done && n.body) out.push({ id: n.id, y: n.body.getWorldCenter().y });
     return out.sort((a, b) => b.y - a.y);
   }
-  // 선두가 새 구간에 들어가면 알림
+  // 카메라가 보는 무리가 새 구간에 들어서면 가운데에 구간 이름을 크게
   function checkStage(alive) {
     if (st.map.stages.length < 2 || !alive.length || st.focusY === null) return;
     const si = Sim.stageAt(st.map, st.focusY);
     if (si > st.stageSeen) {
       st.stageSeen = si;
-      banner(`${si + 1}구간 ${st.map.stages[si].name}`, 'stage');
+      showStageTitle(si);
+      st.fx.screen(Render.themeOf(si).glow, 0.18);
       Render.Sound.play('stage');
     }
   }
+  // 순위판: 도착한 이름(칸 이름과 함께) 다음에 아직 떨어지는 이름을 지금 위치 순서로. 전원을 보여준다
   function renderLiveRank(alive) {
-    const ul = $('liveRank'), done = st.results.length;
-    ul.innerHTML = '';
-    alive.slice(0, 5).forEach((a, i) => {
-      const p = byId(a.id), li = document.createElement('li');
-      li.innerHTML = '<span class="rk"></span><i></i><span class="nm"></span><span class="st"></span>';
-      li.children[0].textContent = done + i + 1;
-      li.children[1].style.background = p ? p.color : Render.COL.chrome;
-      li.children[2].textContent = p ? p.name : '?';
-      li.children[3].textContent = st.map.stages.length > 1 ? `${Sim.stageAt(st.map, a.y) + 1}구간` : '';
-      ul.appendChild(li);
+    const rows = [], multi = st.map.stages.length > 1;
+    st.results.forEach((r, i) => rows.push({ rk: i + 1, name: r.name, color: r.color, note: r.label, cls: st.special.has(r.label) ? 'done win' : 'done' }));
+    alive.forEach((a, i) => {
+      const p = byId(a.id);
+      rows.push({ rk: st.results.length + i + 1, name: p ? p.name : '?', color: p ? p.color : Render.COL.chrome, note: multi ? `${Sim.stageAt(st.map, a.y) + 1}구간` : '', cls: i === 0 ? 'lead' : '' });
     });
-    show('liveWrap', alive.length > 0);
+    const ul = $('liveRank'), frag = document.createDocumentFragment();
+    ul.classList.toggle('compact', rows.length > 18);
+    for (const r of rows) {
+      const li = document.createElement('li');
+      if (r.cls) li.className = r.cls;
+      li.style.setProperty('--c', r.color);
+      li.innerHTML = '<span class="rk"></span><span class="nm"></span><span class="st"></span>';
+      li.children[0].textContent = r.rk;
+      li.children[1].textContent = r.name;
+      li.children[2].textContent = r.note;
+      frag.appendChild(li);
+    }
+    ul.replaceChildren(frag);
+    show('liveWrap', rows.length > 0);
   }
   // 폰에 1초마다 내 순위·진행도만 보낸다 (위치 스트리밍은 하지 않음)
   function sendProgress(alive) {
@@ -775,7 +864,11 @@
     const now = ts || performance.now();
     const dt = Math.min(0.1, Math.max(0, (now - (last || now)) / 1000));
     last = now;
+    const t0 = performance.now();
     try { tick(dt, now); } catch (e) { console.error(e); }
+    // 성능 점검용: 이 프레임에 우리 코드가 쓴 시간 (40ms 넘으면 기록)
+    const ms = performance.now() - t0, s = st.stats;
+    if (ms > 40 && (s.slowTicks = s.slowTicks || []).length < 20) s.slowTicks.push([Math.round(ms), st.phase, st.game ? +st.game.t.toFixed(2) : 0]);
     requestAnimationFrame(frame);
   }
   function tick(dt, now) {
@@ -785,6 +878,7 @@
       if (el >= COUNT_SEC && st.game) {
         st.phase = 'running';
         st.acc = 0;
+        st.goAt = now;
         Render.Sound.play('go');
         showPanel();
       }
@@ -805,6 +899,7 @@
       st.stats.frames++;
       updateTrails();
       const alive = aliveByProgress();
+      st.leaderId = alive.length ? alive[0].id : null;
       checkStage(alive);
       if (now - st.liveAt > 250) { st.liveAt = now; renderLiveRank(alive); }
       if (now - st.progAt > 1000) { st.progAt = now; sendProgress(alive); }

@@ -1,12 +1,12 @@
 {
-  "_사용법": "이미지를 assets/ 폴더에 넣고 아래 값에 파일 이름을 적으면 게임이 불러서 씁니다. null이면 코드로 그린 그림을 씁니다.",
+  "_사용법": "이미지를 assets/ 폴더에 넣고 아래 값에 파일 이름을 적으면 게임이 불러서 씁니다. null이면 코드로 그린 그림을 씁니다. 원본은 assets/originals/에 두고 python test/build-assets.py로 만듭니다.",
   "images": {
-    "side": null,
-    "stage1": null,
-    "stage2": null,
-    "stage3": null,
-    "stage4": null,
-    "stage5": null,
-    "stage6": null
+    "side": "side.webp",
+    "stage1": "stage1.webp",
+    "stage2": "stage2.webp",
+    "stage3": "stage3.webp",
+    "stage4": "stage4.webp",
+    "stage5": "stage5.webp",
+    "stage6": "stage6.webp"
   }
 }

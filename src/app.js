@@ -38,7 +38,7 @@
   const tpl = document.getElementById(isPhone ? 'tPhone' : 'tHost');
   document.body.appendChild(tpl.content.cloneNode(true));
   document.body.classList.add(isPhone ? 'is-phone' : 'is-host');
-  root.Render.Assets.load();   // 있으면 쓰고 없으면 그림으로 대신 (assets/manifest.json)
+  root.Render.Assets.load(isPhone ? ['stage1'] : null);   // 있으면 쓰고 없으면 그림으로 대신 (assets/manifest.json). 폰은 1구간 바닥만 보여준다
   if (isPhone) root.Player.start(room);
   else root.Host.start();
 })(typeof self !== 'undefined' ? self : this);

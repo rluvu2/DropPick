@@ -3,3 +3,6 @@ test/out/
 .DS_Store
 # 원본 압축 파일 (풀어서 커밋함)
 *.zip
+
+# Gemini 원본 이미지 (워터마크 있음). test/build-assets.py가 이걸로 assets/를 만든다
+assets/originals/
