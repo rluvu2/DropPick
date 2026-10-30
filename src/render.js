@@ -340,7 +340,7 @@
    *   showZone, showStart, showMillRange, halo, ghost, guide, fx, countdown:{n, f}, noOutside(전체 지도의 단)
    * } */
   function drawScene(ctx, T, sc) {
-    const k = T.k, W = C.W, map = sc.map, F = map.F;
+    const k = T.k, W = C.W, map = sc.map, F = map.F, WW = map.W || W;   // W = 출발 지점·칸 폭, WW = 세계 폭
     const FB = sc.finishAt === undefined ? F : sc.finishAt;
     const v = sc.view || map.view;
     const vy0 = v.y0 - 3, vy1 = sc.cut ? Math.min(v.y1 + 3, sc.cut.y0) : v.y1 + 3;
@@ -365,12 +365,12 @@
     });
     // 바닥 그림 위를 살짝 눌러서 네온이 도드라지게
     ctx.fillStyle = 'rgba(6,4,13,0.22)';
-    ctx.fillRect(T.x(0), T.y(Math.max(top, vy0)), W * k, (Math.min(floor, vy1) - Math.max(top, vy0)) * k);
+    ctx.fillRect(T.x(0), T.y(Math.max(top, vy0)), WW * k, (Math.min(floor, vy1) - Math.max(top, vy0)) * k);
     if (!anyImg && k > 4) {
       ctx.fillStyle = 'rgba(164,156,196,0.14)';
       const ds = Math.max(1, 0.06 * k);
       for (let y = Math.ceil(Math.max(top, vy0) / 1.5) * 1.5; y < Math.min(F, vy1); y += 1.5) {
-        for (let x = 1.5; x < W; x += 1.5) ctx.fillRect(T.x(x) - ds / 2, T.y(y) - ds / 2, ds, ds);
+        for (let x = 1.5; x < WW; x += 1.5) ctx.fillRect(T.x(x) - ds / 2, T.y(y) - ds / 2, ds, ds);
       }
     }
     // 길 바깥 바위 (긴 코스)
@@ -461,8 +461,11 @@
           ctx.globalAlpha = 1;
           ctx.globalCompositeOperation = 'source-over';
         }
+      } else if (el.kind === 'kicker') {
+        if (elVisible(el, vy0, vy1)) drawKicker(ctx, T, el, lit ? lit.get(i) || 0 : 0, clock);
       } else if (el.kind === 'bumper') {
         if (!elVisible(el, vy0, vy1)) continue;
+        if ((el.power || 0) > 9) { drawSuperBumper(ctx, T, el, sc.fx ? Math.max(sc.fx.kickNear(el.c, el.r), lit ? lit.get(i) || 0 : 0) : 0, clock); continue; }
         const kick = sc.fx ? sc.fx.kickNear(el.c, el.r) : 0, idle = 0.5 + 0.5 * Math.sin(clock * 3 + el.c[0] + el.c[1]);
         const x = T.x(el.c[0]), y = T.y(el.c[1]), r = el.r * (1 + 0.22 * kick) * k;
         const mg = stageTheme(map, el.c[1]).glow === COL.amber ? COL.magenta : '#F06BD0';
@@ -514,7 +517,7 @@
 
     // 6. 줄여 보여주기 표시 + 레이저 결승선
     if (sc.cut) drawCut(ctx, T, sc.cut, v.y1 + 3);
-    if (sc.cut || vis(FB - 1, FB + C.LABEL_BAND)) drawFinish(ctx, T, sc, FB);
+    if (sc.cut || vis(FB - 1, FB + C.LABEL_BAND)) drawFinish(ctx, T, Object.assign({ map }, sc), FB);
 
     // 출발 위치 가이드 (폰)
     if (sc.guide) {
@@ -546,22 +549,28 @@
   // 구간 바닥 그림: 보드 폭(30m)에 맞추고, 구간이 그림보다 꽤 길면(1구간) 세로로 이어 붙인다(위아래가 이어지게 만든 그림).
   // 아니면 한 장을 구간 높이에 맞춰 늘린다. 그림이 없으면 테마 그라디언트만
   function drawStageBg(ctx, T, map, s, i, a, b, floor) {
-    const k = T.k, W = C.W, th = themeOf(map.stages.length > 1 ? i : 0);
+    const k = T.k, W = C.W, WW = map.W || W, th = themeOf(map.stages.length > 1 ? i : 0);
     const g = ctx.createLinearGradient(0, T.y(Math.max(s.y0, -6)), 0, T.y(Math.min(s.y1, map.F)));
     g.addColorStop(0, th.bg2); g.addColorStop(1, th.bg);
     ctx.fillStyle = g;
-    ctx.fillRect(T.x(0), T.y(a), W * k, (b - a) * k);
+    ctx.fillRect(T.x(0), T.y(a), WW * k, (b - a) * k);
     const img = Assets.img['stage' + (i + 1)];
     if (!img || !img.width) return false;
     const sy0 = s.y0, sy1 = Math.min(s.y1, floor), H = sy1 - sy0;
     const tH = W * img.height / img.width;
+    // 한 장의 크기와 시작 x: 구간이 그림보다 꽤 길면(1구간) 원래 크기로 세로 반복, 아니면 구간 높이에 맞춰 늘린다
+    const rep = H > tH * 1.25, f = rep ? 1 : Math.max(1, H / tH), tw = W * f, th2 = tH * f, x0 = rep ? 0 : (W - tw) / 2;
+    const vx0 = Math.max(0, T.mx(0)), vx1 = Math.min(WW, T.mx(T.w));
     ctx.save();
-    ctx.beginPath(); ctx.rect(T.x(0), T.y(a), W * k, (b - a) * k); ctx.clip();
-    if (H > tH * 1.25) {
-      for (let y = sy0 + Math.floor((a - sy0) / tH) * tH; y < b; y += tH) ctx.drawImage(img, T.x(0), T.y(y), W * k, tH * k);
-    } else {
-      const f = Math.max(1, H / tH), dw = W * f;
-      ctx.drawImage(img, T.x((W - dw) / 2), T.y(sy0), dw * k, tH * f * k);
+    ctx.beginPath(); ctx.rect(T.x(0), T.y(a), WW * k, (b - a) * k); ctx.clip();
+    for (let j = Math.floor((vx0 - x0) / tw); x0 + j * tw < vx1; j++) {
+      const px = T.x(x0 + j * tw), pw = tw * k, flip = Math.abs(j) % 2 === 1;   // 옆 장은 좌우를 뒤집어서 이음매가 안 보이게
+      const ys = rep ? (() => { const out = []; for (let y = sy0 + Math.floor((a - sy0) / tH) * tH; y < b; y += tH) out.push(y); return out; })() : [sy0];
+      for (const y of ys) {
+        if (flip) { ctx.save(); ctx.translate(px * 2 + pw, 0); ctx.scale(-1, 1); }
+        ctx.drawImage(img, px, T.y(y), pw, th2 * k);
+        if (flip) ctx.restore();
+      }
     }
     ctx.restore();
     return true;
@@ -593,6 +602,51 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.92)';
     ctx.lineWidth = Math.max(1, r * 0.75 * k); ctx.stroke();
     ctx.lineCap = 'round';
+  }
+  // 킥커(점프대·벽 킥커): 빛나는 판 + 튀어 나가는 방향으로 흐르는 화살 모양. 맞으면 하얗게 번쩍
+  function drawKicker(ctx, T, el, L, clock) {
+    const k = T.k, ax = T.x(el.a[0]), ay = T.y(el.a[1]), bx = T.x(el.b[0]), by = T.y(el.b[1]), col = '#FF4FD8';
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = alpha(col, 0.28 + 0.5 * L);
+    ctx.lineWidth = Math.max(8, (el.r * 2 + 0.9 + 0.8 * L) * k); ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = L > 0.05 ? '#FFFFFF' : lighten(col, 0.35);
+    ctx.lineWidth = Math.max(3, (el.r * 2 + 0.12) * k); ctx.stroke();
+    const cx = (ax + bx) / 2, cy = (ay + by) / 2, d = el.dir, nx = -d[1], ny = d[0], sz = Math.max(4, 0.45 * k);
+    ctx.lineWidth = Math.max(1.5, 0.12 * k);
+    for (let j = 0; j < 3; j++) {
+      const off = (0.45 + j * 0.55 + (clock * 1.6) % 0.55) * k, px = cx + d[0] * off, py = cy + d[1] * off;
+      ctx.strokeStyle = alpha(col, Math.max(0, 0.85 - j * 0.25));
+      ctx.beginPath();
+      ctx.moveTo(px - d[0] * sz * 0.6 + nx * sz * 0.7, py - d[1] * sz * 0.6 + ny * sz * 0.7);
+      ctx.lineTo(px, py);
+      ctx.lineTo(px - d[0] * sz * 0.6 - nx * sz * 0.7, py - d[1] * sz * 0.6 - ny * sz * 0.7);
+      ctx.stroke();
+    }
+  }
+  // 슈퍼 범퍼: 더 크고 세게 튕긴다. 앰버 바깥 고리 + 마젠타 몸통, 튕길 때 크게 부풀며 번쩍
+  function drawSuperBumper(ctx, T, el, kick, clock) {
+    const k = T.k, x = T.x(el.c[0]), y = T.y(el.c[1]), idle = 0.5 + 0.5 * Math.sin(clock * 4 + el.c[0]), r = el.r * (1 + 0.3 * kick) * k;
+    ctx.globalCompositeOperation = 'lighter';
+    const gr = (el.r + 1.6 + 1.2 * kick) * k;
+    ctx.globalAlpha = 0.45 + 0.2 * idle + 0.35 * kick;
+    ctx.drawImage(glowSprite(COL.amber), x - gr, y - gr, gr * 2, gr * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#2E0A2C';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    ctx.lineWidth = Math.max(2, 0.24 * k);
+    ctx.strokeStyle = kick > 0.05 ? '#FFFFFF' : COL.amber;
+    ctx.beginPath(); ctx.arc(x, y, r - 0.12 * k, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = lighten('#F06BD0', 0.2 + 0.4 * kick);
+    ctx.beginPath(); ctx.arc(x, y, r * 0.66, 0, TAU); ctx.stroke();
+    ctx.fillStyle = lighten(COL.amber, 0.25 + 0.5 * idle);
+    ctx.beginPath(); ctx.arc(x, y, r * 0.32, 0, TAU); ctx.fill();
+    // 바깥으로 도는 점 넷
+    ctx.fillStyle = alpha(COL.amber, 0.9);
+    for (let j = 0; j < 4; j++) { const t = clock * 2.5 + j * Math.PI / 2; ctx.beginPath(); ctx.arc(x + Math.cos(t) * (r + 0.32 * k), y + Math.sin(t) * (r + 0.32 * k), Math.max(1.5, 0.1 * k), 0, TAU); ctx.fill(); }
   }
   function hub(ctx, x, y, r) {
     ctx.globalCompositeOperation = 'lighter';
@@ -698,7 +752,7 @@
 
   // 보드 바깥(좌우) 장식: 옆판 그림을 세로로 이어 붙이고(오른쪽은 좌우 반전), 레일과 깜박이는 조명
   function drawSides(ctx, T, v, map, clock) {
-    const k = T.k, W = C.W;
+    const k = T.k, W = map.W || C.W;
     const lw = T.x(0) - T.x(v.x0), rw = T.x(v.x1) - T.x(W);
     const yTop = T.y(v.y0) - 50, yBot = T.y(v.y1) + 50;
     const img = Assets.img.side;
@@ -842,7 +896,10 @@
   }
 
   // 레이저 결승선: 칸마다 빛나는 레이저, 칸막이, 칸 이름. 확정된 칸은 주인 색으로 번쩍이며 줄어든다
-  function drawFinish(ctx, T, sc, F) {
+  function drawFinish(ctx, T0, sc, F) {
+    // 결승선은 finishX부터 칸 폭(C.W)만큼. 좌표 변환을 그만큼 옮겨서 아래는 0~W로 그린다
+    const FX = sc.finishAt !== undefined ? 0 : (sc.map.finishX || 0);
+    const T = FX ? Object.assign({}, T0, { x: m => T0.x(m + FX), ox: T0.ox + FX * T0.k }) : T0;
     const k = T.k, B = C.LABEL_BAND, W = C.W, clock = sc.clock || 0;
     const g = ctx.createLinearGradient(0, T.y(F), 0, T.y(F + B));
     g.addColorStop(0, '#24091C'); g.addColorStop(0.35, '#12081A'); g.addColorStop(1, '#07040C');
@@ -1041,11 +1098,11 @@
   function minimapGeom(map, rect) {
     const y0 = -6, y1 = map.F + C.LABEL_BAND + 1;
     if (rect.stretch) {
-      const sx = rect.w / (C.W + 2), sy = rect.h / (y1 - y0), w = C.W * sx;
+      const WW = map.W || C.W, sx = rect.w / (WW + 2), sy = rect.h / (y1 - y0), w = WW * sx;
       return { s: Math.min(sx, sy), sx, sy, x: rect.x + (rect.w - w) / 2, top: rect.y, y0, y1, w, h: rect.h, toY: py => y0 + (py - rect.y) / sy };
     }
-    const s = Math.min(rect.h / (y1 - y0), rect.w / (C.W + 2));
-    const w = C.W * s, x = rect.x + (rect.w - w) / 2, top = rect.y + (rect.h - (y1 - y0) * s) / 2;
+    const WW = map.W || C.W, s = Math.min(rect.h / (y1 - y0), rect.w / (WW + 2));
+    const w = WW * s, x = rect.x + (rect.w - w) / 2, top = rect.y + (rect.h - (y1 - y0) * s) / 2;
     return { s, sx: s, sy: s, x, top, y0, y1, w, h: (y1 - y0) * s, toY: py => y0 + (py - top) / s };
   }
   function drawMinimap(ctx, rect, info) {
@@ -1070,7 +1127,7 @@
         c.fillStyle = 'rgba(6,4,13,0.92)';
         for (const poly of map.path.rocks) {
           c.beginPath();
-          poly.forEach((p, i) => { const px = X(Math.max(-0.2, Math.min(C.W + 0.2, p[0]))), py = Y(Math.max(g.y0, p[1])); if (i) c.lineTo(px, py); else c.moveTo(px, py); });
+          poly.forEach((p, i) => { const px = X(Math.max(-0.2, Math.min((map.W || C.W) + 0.2, p[0]))), py = Y(Math.max(g.y0, p[1])); if (i) c.lineTo(px, py); else c.moveTo(px, py); });
           c.closePath(); c.fill();
         }
       }
@@ -1087,7 +1144,7 @@
         else { c.beginPath(); c.arc(X(el.c[0]), Y(el.c[1]), Math.max(0.8, el.r * g.s), 0, TAU); c.fill(); }
       }
       c.fillStyle = COL.laser;
-      c.fillRect(0, Y(map.F) - 1, g.w, 2.5);
+      c.fillRect(X(map.finishX || 0), Y(map.F) - 1, C.W * g.sx, 2.5);
       if (g.w >= 100 && map.stages.length > 1) {
         // 대기실처럼 미니맵이 넓으면 구간 이름을 띠 위쪽에
         c.font = '700 10px "IBM Plex Sans KR", sans-serif';
@@ -1113,7 +1170,7 @@
     for (const n of info.names || []) {
       const r = n.lead ? 3.4 : 2.4;
       ctx.fillStyle = n.color;
-      ctx.beginPath(); ctx.arc(X(Math.max(0, Math.min(C.W, n.x))), Y(Math.max(g.y0, Math.min(g.y1, n.y))), r, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(X(Math.max(0, Math.min(map.W || C.W, n.x))), Y(Math.max(g.y0, Math.min(g.y1, n.y))), r, 0, TAU); ctx.fill();
       ctx.strokeStyle = n.lead ? '#FFFFFF' : COL.void; ctx.lineWidth = n.lead ? 1.5 : 1;
       ctx.stroke();
     }
@@ -1158,6 +1215,7 @@
       this.last[kind] = now;
       try {
         if (kind === 'bump') this.tone(180, 90, 0.14, 'sine', 0.22);
+        else if (kind === 'boom') { this.tone(150, 55, 0.24, 'sine', 0.32); this.tone(420, 260, 0.1, 'triangle', 0.08); this.noise(0.14, 0.07); }   // 슈퍼 범퍼·킥커
         else if (kind === 'pin') this.tone(1600 + Math.random() * 500, 1200, 0.03, 'triangle', 0.025);
         else if (kind === 'hit') this.tone(900, 600, 0.05, 'square', 0.06);
         else if (kind === 'break') this.noise(0.22, 0.18);

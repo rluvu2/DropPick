@@ -338,7 +338,7 @@
         // 도착: 결승선에서 빛기둥이 솟고, 이름 색 불꽃이 튀고, 레이저를 따라 물결이 퍼지고, 'n등'이 튀어 오른다
         const p = byId(e.id), color = p ? p.color : Render.COL.amber, name = p ? p.name : '?';
         const order = st.results.length + 1, win = st.special.has(e.label), F = st.map.F;
-        const x = Math.max(1.5, Math.min(C.W - 1.5, e.x));
+        const FX = st.map.finishX || 0, x = Math.max(FX + 1.5, Math.min(FX + C.W - 1.5, e.x));   // 결승선(칸)이 있는 x 안에서
         st.results.push({ id: e.id, name, color, label: e.label, seg: e.seg, t: e.time });
         st.lastResults[e.id] = { label: e.label, seg: e.seg, order };
         fx.laser(e.x);
@@ -354,7 +354,7 @@
         if (win) {
           showWin(name, e.label, color);
           fx.confetti(x, F - 0.4, 90);
-          for (let i = 0; i < 3; i++) fx.firework(4 + Math.random() * (C.W - 8), F - 7 - Math.random() * 6);
+          for (let i = 0; i < 3; i++) fx.firework(FX + 4 + Math.random() * (C.W - 8), F - 7 - Math.random() * 6);
           fx.screen(Render.COL.amber, 0.5);
           fx.shake = 0.8;
           Render.Sound.play('win');
@@ -378,12 +378,17 @@
         break;
       }
       case 'bounce': fx.ring(e.x, e.y, Render.COL.teal, 1.2); Render.Sound.play('tramp'); break;
-      case 'kick':
-        fx.ring(e.x, e.y, Render.COL.magenta, 1.3);
-        fx.sparks(e.x, e.y, Render.COL.magenta, 5);
+      case 'kick': {
+        // 맵 범퍼·킥커(e.el)·유저 범퍼(e.id). 슈퍼 범퍼·킥커처럼 센 것(power 10 이상)은 크게
+        const big = (e.power || 0) >= 10;
+        fx.ring(e.x, e.y, big ? Render.COL.amber : Render.COL.magenta, big ? 2.6 : 1.3);
+        fx.sparks(e.x, e.y, big ? Render.COL.amber : Render.COL.magenta, big ? 14 : 5, big ? 1.4 : 1);
+        if (e.el !== undefined && e.el >= 0) fx.light(e.el);
+        if (big) { fx.flare(e.x, e.y, Render.COL.amber); fx.shake = Math.max(fx.shake, 0.16); }
         if (!e.id) fx.kick(e.x, e.y);
-        Render.Sound.play('bump');
+        Render.Sound.play(big ? 'boom' : 'bump');
         break;
+      }
       case 'sudden':
         // 긴 코스는 45초쯤엔 보통 다들 장애물 구역을 지나서, 구역에 이름이 남아 있을 때만 알린다
         if (st.map.id === 'short' || e.busy) { banner('서든데스! 유저 장애물이 모두 부서졌어요'); Render.Sound.play('break'); }
@@ -641,13 +646,15 @@
     const top = names.reduce((m, n) => Math.min(m, n.y), C.START_Y);
     const lo = Math.min(C.VIEW.y0, top - 1.4), hi = F + C.LABEL_BAND + 0.8;
     const FULL = C.W + 1.2, Hfull = FULL * visH / sw;   // 보드 폭 전체를 보여줄 때 보이는 높이
-    let Wv = FULL, cx = C.W / 2, cy = null, needH = 0;
+    let Wv = FULL, cx = null, cy = null, needH = 0;
     if (st.manual && now < st.manual.until) cy = st.manual.y;
     else if (!names.length) cy = F;
     else if (!st.follow) {
-      let y0 = Infinity, y1 = -Infinity;
-      for (const n of names) { y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); }
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const n of names) { x0 = Math.min(x0, n.x); x1 = Math.max(x1, n.x); y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); }
       cy = (y0 + y1) / 2 + 0.5;
+      cx = (x0 + x1) / 2;
+      Wv = Math.max(FULL, x1 - x0 + 8);   // 긴 코스는 옆으로도 퍼져서 폭도 맞춘다
       needH = y1 - y0 + 7;
     } else {
       if (names.length <= 3) {
@@ -671,8 +678,9 @@
     if (st.zoomW !== null) Wv = st.zoomW;
     let k = sw / Wv;
     if (needH) k = Math.min(k, visH / needH);
-    const vw = sw / k, Hs = h / k;
-    cx = vw >= FULL ? C.W / 2 : Math.max(vw / 2 - 0.6, Math.min(C.W + 0.6 - vw / 2, cx));
+    const vw = sw / k, Hs = h / k, WW = st.map.W || C.W;
+    if (cx === null) cx = Sim.pathMid(st.map, cy);   // 길 가운데를 따라 (긴 코스는 옆으로 흐른다)
+    cx = vw >= WW + 1.2 ? WW / 2 : Math.max(vw / 2 - 0.6, Math.min(WW + 0.6 - vw / 2, cx));
     if (dt) st.focusY = cy;
     cy += Hs * insetFrac / 2;   // 아래 결승선 띠에 가리는 만큼 내려서, 보이는 부분 가운데에 오게
     const a = lo + Hs / 2, b = hi - Hs / 2;
@@ -689,7 +697,7 @@
   }
   // 미니맵은 왼쪽 위 (오른쪽은 순위판)
   function mmRectFor(map, w, h) {
-    const mw = 88, mh = Math.min(h - 28, mw * (map.F + 10) / (C.W + 2));
+    const mw = map.W > C.W ? 120 : 88, mh = Math.min(h - 28, mw * (map.F + 10) / (map.W + 2));
     return { x: 14, y: 14, w: mw, h: mh };
   }
 
@@ -724,8 +732,8 @@
   function resetLook() { look.cy = null; look.cx = null; look.zoomW = null; look.cur = null; look.tour = null; renderLookTools(); }
   function stopTour() { if (look.tour) { look.tour = null; renderLookTools(); } }
   function lobbyMini(map, w, h) {
-    const mw = Math.round(Math.max(70, Math.min(130, (h - 28) * (C.W + 2) / (map.F + 10))));
-    return { x: 14, y: 14, w: mw, h: Math.min(h - 28, mw * (map.F + 10) / (C.W + 2)) };
+    const mw = Math.round(Math.max(70, Math.min(map.W > C.W ? 170 : 130, (h - 28) * (map.W + 2) / (map.F + 10))));
+    return { x: 14, y: 14, w: mw, h: Math.min(h - 28, mw * (map.F + 10) / (map.W + 2)) };
   }
   // 설정 창이 보드를 가리는 만큼 (오른쪽에 떠 있으면 폭, 좁은 화면에서 아래에서 올라왔으면 높이)
   function panelCover(w, h) {
@@ -756,8 +764,10 @@
     }
     if (look.cy !== null) look.cy = clampY(look.cy);   // 끝을 넘겨 굴린 만큼 쌓이지 않게
     const cy = look.cy === null ? clampY(-Infinity) : look.cy;
-    const half = Math.min(look.zoomW, FULL) / 2;
-    const cx = look.zoomW >= FULL || look.cx === null ? C.W / 2 : Math.max(half - 0.6, Math.min(C.W + 0.6 - half, look.cx));
+    // 가로: 직접 옮기지 않았으면 그 높이의 길 가운데를 따라간다(둘러보기도). 세계 밖으로는 안 나가게
+    const WW = map.W || C.W, vw = look.zoomW, half = vw / 2;
+    const want = look.cx === null ? Sim.pathMid(map, cy) : look.cx;
+    const cx = vw >= WW + 1.2 ? WW / 2 : Math.max(half - 0.6, Math.min(WW + 0.6 - half, want));
     if (look.cx !== null) look.cx = cx;
     look.geo = { left, sw, vTop, vBot };
     return { cx, cy, zoomW: look.zoomW, left, sw, vTop, vBot, tour: !!look.tour };
@@ -864,8 +874,8 @@
   // 아래 띠에 결승선 카메라: 안전 영역 폭에 보드 폭 전체, 결승선 위 몇 m부터 칸 이름까지
   function drawInset(ctx, w, h, ih, scene) {
     const { left, right } = safeArea(w), iw = right - left, F = st.map.F, y = h - ih;
-    const vh = (C.W + 1.2) * ih / iw, vy1 = F + C.LABEL_BAND + 0.5;
-    const view = { x0: -0.6, x1: C.W + 0.6, y0: vy1 - vh, y1: vy1 };
+    const vh = (C.W + 1.2) * ih / iw, vy1 = F + C.LABEL_BAND + 0.5, FX = st.map.finishX || 0;
+    const view = { x0: FX - 0.6, x1: FX + C.W + 0.6, y0: vy1 - vh, y1: vy1 };
     ctx.save();
     ctx.beginPath(); ctx.rect(left, y, iw, ih); ctx.clip();
     ctx.translate(left, y);
@@ -1030,7 +1040,7 @@
     const lookAt = py => {
       const y = Render.minimapGeom(mapNow(), st.mmRect).toY(py);
       if (racing()) st.manual = { y, until: performance.now() + 4000 };
-      else { stopTour(); look.cy = y; hideHint(); }
+      else { stopTour(); look.cy = y; look.cx = null; hideHint(); }
     };
     cv.addEventListener('pointerdown', e => {
       const [px, py] = pt(e);
@@ -1054,7 +1064,7 @@
         const k = st.T.k;
         look.cy = d.cy - (py - d.py) / k;
         look.cx = d.cx - (px - d.px) / k;
-        Object.assign(look.cur, { cy: look.cy, cx: look.zoomW >= C.W + 1.2 ? look.cur.cx : look.cx });
+        Object.assign(look.cur, { cy: look.cy, cx: look.cx });
         if (Math.abs(py - d.py) + Math.abs(px - d.px) > 6) hideHint();
         return;
       }

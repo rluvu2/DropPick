@@ -46,7 +46,8 @@ const NAMES = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'fixtur
             const kind = kinds[Math.floor(rnd() * kinds.length)];
             const a = MODE === 'block' ? (kind === 'tramp' ? 0 : (rnd() < 0.5 ? 1 : 11) * Math.PI / 12)
               : kind === 'tramp' ? (Math.floor(rnd() * 7) - 3) * Math.PI / 12 : (1 + Math.floor(rnd() * 11)) * Math.PI / 12;
-            const o = { id: `o${i}_${k}`, owner: 'p' + i, kind, x: 1 + rnd() * 28, y: 3.5 + rnd() * (map.F - 6), a: Sim.normAngle(kind, a) };   // 코스 어디든
+            const o = { id: `o${i}_${k}`, owner: 'p' + i, kind, y: 3.5 + rnd() * (map.F - 6), x: 0, a: Sim.normAngle(kind, a) };
+        { const iv = Sim.openAt(map, o.y), seg = iv[Math.floor(rnd() * iv.length)]; o.x = seg[0] + 1 + rnd() * Math.max(0, seg[1] - seg[0] - 2); }   // 그 높이의 길 안   // 코스 어디든
             if (Sim.validateObstacle(map, obstacles, o).ok) { obstacles.push(o); break; }
           }
         }

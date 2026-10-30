@@ -63,35 +63,38 @@
   // timers — sudden: 유저 장애물 전부 파괴(사용자 요구사항 45초), rush: 중력 1.6배, final: 남은 이름 유령 낙하.
   const COURSES = {
     short: { id: 'short', label: '짧은 코스', finishY: 31, timers: { sudden: 45, rush: 45, final: 75 } },
-    long: { id: 'long', label: '긴 코스', finishY: 136, timers: { sudden: 45, rush: 90, final: 120 } },
+    long: { id: 'long', label: '긴 코스', finishY: 141, timers: { sudden: 45, rush: 90, final: 120 } },
   };
   const STAGES_LONG = [
     { name: '핀볼 숲', y0: -16, y1: 31.5 },
-    { name: '지그재그 슬로프', y0: 31.5, y1: 65.5 },
+    { name: '점프 슬로프', y0: 31.5, y1: 65.5 },
     { name: '범퍼 정원', y0: 65.5, y1: 88 },
     { name: '시계추 골짜기', y0: 88, y1: 110 },
     { name: '회전 원판', y0: 110, y1: 123.5 },
-    { name: '레이저 커튼', y0: 123.5, y1: Infinity },
+    { name: '마지막 반전', y0: 123.5, y1: Infinity },
   ];
 
   // ---------- 맵 ----------
   function buildMap(course) {
     const id = COURSES[course] ? course : 'short';
-    const W = C.W, F = COURSES[id].finishY, els = [];
+    // 긴 코스는 옆으로 흐른다: 출발(1구간)은 x 0~30, 결승선은 x FX~FX+30. 세계 폭 WW (짧은 코스는 둘 다 0~30)
+    const W = C.W, F = COURSES[id].finishY, els = [], WW = id === 'long' ? 70 : W, FX = id === 'long' ? 40 : 0;
     const wall = (a, b, r) => els.push({ kind: 'wall', a, b, r: r || 0.3 });
     const pin = (x, y, r) => els.push({ kind: 'pin', c: [x, y], r: r || 0.3 });
-    const bumper = (x, y, r) => els.push({ kind: 'bumper', c: [x, y], r });
+    const bumper = (x, y, r, power) => els.push({ kind: 'bumper', c: [x, y], r, power: power || C.MAP_BUMP_SPEED });   // power가 크면 '슈퍼 범퍼'
     const mill = (x, y, len, speed) => els.push({ kind: 'mill', c: [x, y], len, thick: 0.36, speed });
     const defl = (a, b, r) => els.push({ kind: 'deflector', a, b, r: r || 0.22 });
     const pendulum = (x, y, len, amp, period, phase) => els.push({ kind: 'pendulum', c: [x, y], len, thick: 0.55, amp, period, phase: phase || 0 });
     const slider = (x, y, len, tilt, amp, period, phase) => els.push({ kind: 'slider', c: [x, y], len, thick: 0.45, tilt, amp, period, phase: phase || 0 });
     const disc = (x, y, r, speed) => els.push({ kind: 'disc', c: [x, y], r, speed });
+    // 킥커(점프대·벽 킥커): 닿으면 dir 방향으로 power(m/s)만큼 튕겨 낸다
+    const kicker = (a, b, dir, power) => { const L = Math.hypot(dir[0], dir[1]) || 1; els.push({ kind: 'kicker', a, b, r: 0.18, dir: [dir[0] / L, dir[1] / L], power }); };
 
     // 바깥 벽. 긴 코스는 이 안에 구불구불한 길을 새기므로 바깥 벽은 물리 안전망으로만 두고 그리지 않는다(frame)
     wall([0, -16], [0, F + 6]); els[els.length - 1].frame = true;
-    wall([W, -16], [W, F + 6]); els[els.length - 1].frame = true;
+    wall([WW, -16], [WW, F + 6]); els[els.length - 1].frame = true;
     wall([0, -16], [W, -16]);
-    wall([0, F + 5], [W, F + 5]);
+    wall([FX, F + 5], [FX + W, F + 5]);
 
     // 1구역: 엇갈린 핀 (핀 간격 > 가장 긴 이름 폭)
     [6, 12, 18, 24].forEach(x => pin(x, 5.0));
@@ -117,56 +120,65 @@
 
     let path = null;
     if (id === 'long') {
-      // 이름은 최대 4.6m 길이의 막대라서 구슬보다 길이 넓어야 한다: 통로·틈은 6m 이상(길은 10m 안팎), 이름이 얹힐 수 있는
-      // 면은 25° 이상(대부분 40° 이상), 움직이는 부품은 벽에서 6m 이상 떨어뜨린다(벽에 눌려 끼지 않게).
+      // 이름은 최대 4.6m 길이의 막대라서 구슬보다 길이 넓어야 한다: 통로·틈은 6m 이상, 고정 구조물끼리 틈 4.8m 이상, 이름이 얹힐 수 있는
+      // 면은 25° 이상(대부분 37° 이상), 움직이는 부품은 벽에서 6m 이상 떨어뜨린다(벽에 눌려 끼지 않게).
       // 길 모양(path): 왼쪽(L)·오른쪽(R) 벽을 y가 커지는 꺾은선으로 정하고, 그 바깥은 바위. 섬(islands)은 길 가운데 바위.
-      // 2구간: 지그재그 슬로프 — 1구간 아래 깔때기(40°)로 모아서, 폭 10m 길이 오른쪽 아래(55°)로 갔다가 왼쪽 아래(38~43°)로 꺾인다.
-      //   꺾이는 바깥 구석은 둥글게(가운데 59°) — 구석에 쌓이면 미끄러지는 이름과 맞부딪혀 막히기 때문(이전 지그재그에서 확인).
-      // 3구간: 범퍼 정원 — 길이 넓은 방으로 열린다(오른쪽 위는 비스듬한 바위 천장). 엇갈린 범퍼 네 줄, 벽 쪽 턱
-      [7, 15, 23].forEach(x => bumper(x, 69, 0.9));
-      [11, 19].forEach(x => bumper(x, 74.5, 0.9));
-      [7, 15, 23].forEach(x => bumper(x, 80, 0.9));
-      [11, 19].forEach(x => bumper(x, 84.5, 0.9));
-      defl([0, 71.5], [2.6, 73.0]);
-      defl([W, 71.5], [W - 2.6, 73.0]);
-      defl([0, 82.5], [2.6, 84.0]);   // 범퍼와 4.8m 넘게 띄운다 (79.5로 올렸더니 범퍼(7,80) 사이에 이름이 끼었음)
-      defl([W, 82.5], [W - 2.6, 84.0]);
-      // 4구간: 시계추 골짜기 — 양쪽 벽이 V자로 모여 가운데 큰 시계추 쪽으로 보낸다(휘두르는 범위에서 6m 이상), 아래로 좌우로 오가는 발판 둘
-      pin(15, 89.5, 0.6);
-      pendulum(15, 89.5, 9.0, 0.62, 3.6, 0);
-      slider(15, 103, 6.5, 0.26, 5.5, 4.2, 0);
-      slider(15, 107.5, 6.5, -0.26, 5.5, 4.2, Math.PI);
+      // 코스는 옆으로 흐른다: 출발 x 0~30 → 2구간 긴 미끄럼길로 오른쪽 아래 → 3~6구간은 x 38~70, 결승선 x 40~70.
+      // 2구간: 점프 슬로프 — 1구간 아래 깔때기(47°)에서 폭 12.5m 미끄럼길이 오른쪽 아래(40°)로 30m 내려간다. 바닥 점프대 둘이 이름을 앞으로 띄운다
+      const fl = [[8, 38], [38, 63]], d = [0.7682, 0.6402], nrm = [0.6402, -0.7682];
+      for (const t of [0.33, 0.66]) {
+        const p = [fl[0][0] + 30 * t + nrm[0] * 0.45, fl[0][1] + 25 * t + nrm[1] * 0.45];
+        kicker([p[0] - d[0] * 1.5, p[1] - d[1] * 1.5], [p[0] + d[0] * 1.5, p[1] + d[1] * 1.5], [nrm[0] * 0.8 + d[0] * 0.6, nrm[1] * 0.8 + d[1] * 0.6], 11);
+      }
+      // 3구간: 범퍼 정원 x 38~68 — 미끄럼길 끝에서 날아든 이름을 슈퍼 범퍼(크고 세게)가 받아친다. 엇갈린 범퍼 네 줄, 벽 쪽 턱
+      bumper(45, 67, 1.1, 12);
+      [53, 61].forEach(x => bumper(x, 69, 0.9));
+      [49, 57].forEach(x => bumper(x, 74.5, 1.1, 12));
+      [45, 53, 61].forEach(x => bumper(x, 80, 0.9));
+      [49, 57].forEach(x => bumper(x, 84.5, 0.9));
+      defl([38, 71.5], [40.6, 73.0]);
+      defl([68, 71.5], [65.4, 73.0]);
+      defl([38, 82.5], [40.6, 84.0]);   // 범퍼와 4.8m 넘게 띄운다 (가까우면 둘 사이에 이름이 낌)
+      defl([68, 82.5], [65.4, 84.0]);
+      // 4구간: 시계추 골짜기 x 40~70 — 양쪽 벽이 V자로 모여 가운데 큰 시계추 쪽으로(휘두르는 범위에서 6m 이상), 아래로 좌우로 오가는 발판 둘
+      pin(55, 89.5, 0.6);
+      pendulum(55, 89.5, 9.0, 0.62, 3.6, 0);
+      slider(55, 103, 6.5, 0.26, 5.5, 4.2, 0);
+      slider(55, 107.5, 6.5, -0.26, 5.5, 4.2, Math.PI);
       // 5구간: 회전 원판 — 반대로 도는 원판 둘. 그 아래 다이아몬드 섬이 길을 좌우 두 갈래(각 8m)로 나눴다가 합친다
-      disc(8.5, 113.5, 2.4, 2.4);
-      disc(W - 8.5, 113.5, 2.4, -2.4);
-      // 6구간: 레이저 커튼 — 두 갈래가 합쳐진 뒤 마지막 핀
-      [10.5, 19.5].forEach(x => pin(x, 128.2));
-      [5.5, 24.5].forEach(x => pin(x, 130.5));
-      [9, 15, 21].forEach(x => pin(x, 133.0));
+      disc(48.5, 113.5, 2.4, 2.4);
+      disc(61.5, 113.5, 2.4, -2.4);
+      // 6구간: 마지막 반전 — 결승선 바로 위 반대로 도는 풍차 둘(안쪽 날이 아래로 돈다)이 이름을 좌우로 쳐내서 마지막까지 칸을 모른다.
+      // 양쪽 벽의 킥커는 벽을 타고 내려오는 이름을 풍차 쪽으로 밀어 넣는다
+      mill(49.5, F - 5, 3.0, 2.2);
+      mill(60.5, F - 5, 3.0, -2.2);
+      kicker([40.45, F - 9], [40.45, F - 6.5], [0.85, 0.53], 9);
+      kicker([69.55, F - 9], [69.55, F - 6.5], [-0.85, 0.53], 9);
       path = {
-        L: [[0, -16], [0, 29.5], [10, 38], [17, 48], [4, 60], [0, 63], [0, 87.5], [6, 93], [0, 99], [0, 117], [3, 120.5], [3, 124.5], [0, 128], [0, F + 6]],
-        R: [[W, -16], [W, 29.5], [20, 38], [25.5, 45.5], [27, 48.5], [25.5, 51], [14, 60], [W, 64.5], [W, 87.5], [W - 6, 93], [W, 99], [W, 117], [W - 3, 120.5], [W - 3, 124.5], [W, 128], [W, F + 6]],
-        islands: [[[15, 119], [19, 123], [15, 127], [11, 123]]],
+        L: [[0, -16], [0, 29.5], [8, 38], [38, 63], [38, 87], [46, 93], [40, 99], [40, 117], [43, 120.5], [43, 124.5], [40, 128], [40, F + 6]],
+        R: [[30, -16], [30, 46], [50.5, 63], [68, 67], [68, 87], [64, 93], [70, 99], [70, 117], [67, 120.5], [67, 124.5], [70, 128], [70, F + 6]],
+        islands: [[[55, 119], [59, 123], [55, 127], [51, 123]]],
       };
-      // 길의 벽: 바깥 벽과 겹치는 부분은 그리기만(rim), 나머지는 물리 벽
-      for (const [poly, fx] of [[path.L, 0], [path.R, W]]) {
+      // 길의 벽: 바깥 벽(x=0, x=WW)과 겹치는 부분은 그리기만(rim), 나머지는 물리 벽
+      for (const [poly, fx] of [[path.L, 0], [path.R, WW]]) {
         for (let i = 1; i < poly.length; i++) {
-          const a = poly[i - 1], b = poly[i];
-          if (a[0] === fx && b[0] === fx) els.push({ kind: 'rim', a, b, r: 0.3 });
-          else wall(a, b);
+          const p = poly[i - 1], q = poly[i];
+          if (p[0] === fx && q[0] === fx) els.push({ kind: 'rim', a: p, b: q, r: 0.3 });
+          else wall(p, q);
         }
       }
       for (const isl of path.islands) for (let i = 0; i < isl.length; i++) wall(isl[i], isl[(i + 1) % isl.length]);
       // 화면용 바위: 길 바깥(왼쪽·오른쪽)과 섬
       path.rocks = [
         [[-1.5, path.L[0][1]], ...path.L, [-1.5, path.L[path.L.length - 1][1]]],
-        [[W + 1.5, path.R[0][1]], ...path.R, [W + 1.5, path.R[path.R.length - 1][1]]],
+        [[WW + 1.5, path.R[0][1]], ...path.R, [WW + 1.5, path.R[path.R.length - 1][1]]],
         ...path.islands,
       ];
     }
     const stages = id === 'long' ? STAGES_LONG.map(s => Object.assign({}, s, { y1: Math.min(s.y1, F + 6) }))
       : [{ name: '핀볼 숲', y0: -16, y1: F + 6 }];
-    return { id, W, F, els, stages, path, timers: COURSES[id].timers, view: { x0: -0.6, y0: -3.2, x1: W + 0.6, y1: F + 3 } };
+    // W = 세계 폭, finishX = 결승선(칸) 왼쪽 x. 출발 지점과 칸 폭은 C.W
+    return { id, W: WW, F, finishX: FX, els, stages, path, timers: COURSES[id].timers, view: { x0: -0.6, y0: -3.2, x1: W + 0.6, y1: F + 3 } };
   }
 
   // ---------- 길 모양 ----------
@@ -200,6 +212,11 @@
       iv = iv.flatMap(([a, b]) => (sp[1] <= a || sp[0] >= b ? [[a, b]] : [[a, sp[0]], [sp[1], b]].filter(([p, q]) => q > p)));
     }
     return iv;
+  }
+  // 높이 y에서 길의 가운데 x (갈래가 여럿이면 전체의 가운데). 카메라·폰 화면이 길을 따라가는 데 쓴다
+  function pathMid(map, y) {
+    const iv = openAt(map, y);
+    return (iv[0][0] + iv[iv.length - 1][1]) / 2;
   }
 
   // 움직이는 맵 요소의 시각 t 자세 (물리와 대기실 그림이 같이 쓴다, 결정적)
@@ -445,15 +462,15 @@
     _buildStatics() {
       const ground = this.world.createBody({ type: 'static' });
       this.map.els.forEach((el, i) => {
-        if (el.kind === 'wall' || el.kind === 'deflector') {
+        if (el.kind === 'wall' || el.kind === 'deflector' || el.kind === 'kicker') {
           const [ax, ay] = el.a, [bx, by] = el.b;
           const len = Math.hypot(bx - ax, by - ay);
           ground.createFixture(new planck.Box(len / 2, el.r, { x: (ax + bx) / 2, y: (ay + by) / 2 }, Math.atan2(by - ay, bx - ax)),
-            { friction: 0.15, restitution: 0.2, userData: { type: el.kind, el: i } });
+            { friction: 0.15, restitution: 0.2, userData: el.kind === 'kicker' ? { type: 'kicker', el: i, dir: el.dir, power: el.power } : { type: el.kind, el: i } });
         } else if (el.kind === 'pin') {
           ground.createFixture(new planck.Circle({ x: el.c[0], y: el.c[1] }, el.r), { friction: 0.1, restitution: 0.45, userData: { type: 'pin', el: i } });
         } else if (el.kind === 'bumper') {
-          ground.createFixture(new planck.Circle({ x: el.c[0], y: el.c[1] }, el.r), { friction: 0.05, restitution: 0.6, userData: { type: 'mbumper', c: el.c } });
+          ground.createFixture(new planck.Circle({ x: el.c[0], y: el.c[1] }, el.r), { friction: 0.05, restitution: 0.6, userData: { type: 'mbumper', c: el.c, el: i, power: el.power || C.MAP_BUMP_SPEED } });
         } else if (el.kind === 'mill') {
           const b = this.world.createBody({ type: 'kinematic', position: { x: el.c[0], y: el.c[1] }, angle: this.rand() * Math.PI });
           b.createFixture(new planck.Box(el.len, el.thick / 2), { friction: 0.2, restitution: 0.35, userData: { type: 'mill' } });
@@ -515,7 +532,7 @@
         id: n.id, order, body, w: n.w || 1, h: n.h || 1, done: false,
         prevX: c.x, prevY: c.y, hist: [], stuckLevel: 0, lastUnstick: -99,
         bestY: c.y, bestYAt: 0, stalls: 0, phaseUntil: 0,
-        ghostUntil: 0, noCollide: false, lastMapKick: -9, lastSpark: -9, result: null, exit: null,
+        ghostUntil: 0, noCollide: false, lastMapKick: -9, lastKicker: -9, lastSpark: -9, result: null, exit: null,
       });
     }
 
@@ -558,7 +575,7 @@
     _onBegin(c) {
       const p = this._pair(c);
       if (!p || p.both) return;
-      const type = p.ou.type, rule = type === 'uobs' || type === 'mbumper';
+      const type = p.ou.type, rule = type === 'uobs' || type === 'mbumper' || type === 'kicker';
       if (!rule && !SPARK_TYPES[type]) return;
       const n = this.names.get(p.nu.id);
       if (!n || n.done || this._phasing(n)) return;
@@ -602,8 +619,16 @@
         if (h.ou.type === 'mbumper') {
           if (this.t - n.lastMapKick < 0.15) continue;
           n.lastMapKick = this.t;
-          this._push(n, h.ou.c, C.MAP_BUMP_SPEED);
-          this.events.push({ t: 'kick', x: h.x, y: h.y });
+          this._push(n, h.ou.c, h.ou.power);
+          this.events.push({ t: 'kick', x: h.x, y: h.y, el: h.ou.el, power: h.ou.power });
+          continue;
+        }
+        if (h.ou.type === 'kicker') {
+          // 점프대·벽 킥커: 정해진 방향으로 세게
+          if (this.t - n.lastKicker < 0.3) continue;
+          n.lastKicker = this.t;
+          this._launch(n, h.ou.dir, h.ou.power);
+          this.events.push({ t: 'kick', x: h.x, y: h.y, el: h.ou.el, power: h.ou.power, kicker: true });
           continue;
         }
         const o = this.obs.get(h.ou.id);
@@ -656,7 +681,7 @@
       crossings.sort((a, b) => a.t - b.t || a.n.order - b.n.order);
       for (const cr of crossings) {
         const n = cr.n;
-        const seg = this.segments.assign(Math.max(0, Math.min(C.W - 1e-6, cr.x)), n.id, this.t);
+        const seg = this.segments.assign(Math.max(0, Math.min(C.W - 1e-6, cr.x - (this.map.finishX || 0))), n.id, this.t);
         const pos = n.body.getPosition();
         n.exit = { x: pos.x, y: pos.y, a: n.body.getAngle(), t: this.t, cx: cr.x };
         n.done = true;
@@ -755,7 +780,7 @@
       const hw = n.w / 2 + 0.15, hh = n.h / 2 + 0.15;
       for (const dy of [-1.8, -3.0, -1.0]) {
         for (const dx of [0, 1.6, -1.6, 3.2, -3.2]) {
-          const x = Math.max(hw + 0.3, Math.min(C.W - hw - 0.3, c.x + dx)), y = Math.max(-1, c.y + dy);
+          const x = Math.max(hw + 0.3, Math.min((this.map.W || C.W) - hw - 0.3, c.x + dx)), y = Math.max(-1, c.y + dy);
           if (!openAt(this.map, y).some(([a, b]) => x - hw >= a + 0.3 && x + hw <= b - 0.3)) continue;   // 바위 속은 안 됨
           let free = true;
           this.world.queryAABB(new planck.AABB({ x: x - hw, y: y - hh }, { x: x + hw, y: y + hh }), f => {
@@ -821,7 +846,7 @@
   }
 
   return {
-    C, OBS, COURSES, makeRng, buildMap, moverPose, stageAt, openAt, validateObstacle, normAngle, obsGeom, layoutStart, clampDropX,
+    C, OBS, COURSES, makeRng, buildMap, moverPose, stageAt, openAt, pathMid, validateObstacle, normAngle, obsGeom, layoutStart, clampDropX,
     convexHull, simplifyConvex, cleanPoly, polyArea, Segments, Game,
   };
 });

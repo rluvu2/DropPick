@@ -245,10 +245,10 @@
   // 지금 보고 있는 화면 가운데에서 가까운 빈자리 (장애물은 맵 어디든 놓을 수 있다)
   function freeSpot(kind, a) {
     const list = st.obstacles, tries = [], v = obsScroll() && st.lastView;
-    const cy = v ? (v.y0 + v.y1) / 2 : 17;
+    const cy = v ? (v.y0 + v.y1) / 2 : 17, cx = v ? v.cx : 15;
     const y0 = v ? Math.max(C.ZONE.y0 + 1, v.y0 + 1) : 4.5, y1 = v ? Math.min(st.map.F - 3, v.y1 - 1) : 28.5;
-    for (let y = y0; y <= y1; y += 0.5) for (let x = 1.5; x <= 28.5; x += 0.5) tries.push([x, y]);
-    tries.sort((p, q) => Math.hypot(p[0] - 15, (p[1] - cy) * 1.4) - Math.hypot(q[0] - 15, (q[1] - cy) * 1.4));
+    for (let y = y0; y <= y1; y += 0.5) for (let x = cx - 13.5; x <= cx + 13.5; x += 0.5) tries.push([x, y]);
+    tries.sort((p, q) => Math.hypot(p[0] - cx, (p[1] - cy) * 1.4) - Math.hypot(q[0] - cx, (q[1] - cy) * 1.4));
     for (const [x, y] of tries) {
       if (Sim.validateObstacle(st.map, list, { id: '__new', kind, x, y, a }).ok) return [x, y];
     }
@@ -392,7 +392,9 @@
     const k = (w - STRIP) / (C.W + 1.2), H = h / k, [lo, hi] = scrollRange(H);
     if (st.obsTop === null) st.obsTop = lo;
     st.obsTop = Math.max(lo, Math.min(hi, st.obsTop));
-    return { x0: -0.6, x1: -0.6 + w / k, y0: st.obsTop, y1: st.obsTop + H, H };
+    // 긴 코스는 옆으로 흐르므로 화면 가운데 높이의 길 가운데를 따라간다 (보드 폭 31.2m를 보여줌)
+    const WW = st.map.W || C.W, cx = Math.max(15, Math.min(WW - 15, Sim.pathMid(st.map, st.obsTop + H / 2))), x0 = cx - (C.W + 1.2) / 2;
+    return { x0, x1: x0 + w / k, y0: st.obsTop, y1: st.obsTop + H, H, cx };
   }
   function scrollTo(y) {   // 그 높이가 화면 가운데에 오게
     const cv = $('pCanvas'), w = cv.clientWidth || 360, h = cv.clientHeight || 420;
