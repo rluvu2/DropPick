@@ -4,7 +4,8 @@
 (function (root) {
   'use strict';
   const Sim = root.Sim, C = Sim.C, Glyph = root.Glyph, Render = root.Render, Net = root.Net;
-  const MAP = Sim.buildMap();
+  const maps = {};
+  const mapOf = id => maps[id] || (maps[id] = Sim.buildMap(id === 'short' ? 'short' : 'long'));
   const $ = id => document.getElementById(id);
   const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
   const SECTIONS = ['pConnecting', 'pError', 'pName', 'pLobby', 'pRun', 'pDone'];
@@ -16,7 +17,7 @@
   const st = {
     code: '', cid: '', net: null, screen: 'pConnecting',
     me: { id: null, name: null, color: null },
-    phase: 'lobby', obsPer: 2, players: [], obstacles: [], labels: [], fontKey: '',
+    phase: 'lobby', obsPer: 2, map: mapOf('long'), players: [], obstacles: [], labels: [], fontKey: '',
     myX: null, movedAt: 0, dropSentAt: 0, dropTimer: null,
     ready: false, readyAt: 0, inGame: false, result: null,
     tab: 'drop', kind: 'block', edit: null, editOk: false, pending: null, lidSeq: 0,
@@ -63,8 +64,14 @@
     renderTabs(); renderMyObs(); renderReady();
     show('pLobby');
   }
+  function setCourse(id) {
+    if (!id || id === st.map.id) return;
+    st.map = mapOf(id);
+    st.dirty = true;
+  }
   function showRun(msg) {
     $('pRunMsg').textContent = msg || '이름이 떨어지는 중이에요';
+    $('pRace').classList.add('hidden');
     show('pRun');
   }
   function showDone(label, order) {
@@ -92,6 +99,7 @@
   function onData(m) {
     switch (m.t) {
       case 'welcome':
+        setCourse(m.course);
         st.me.id = m.id; st.me.color = m.color; st.me.name = m.name || null;
         st.obsPer = m.obsPer | 0; st.phase = m.phase; st.inGame = !!m.inGame;
         if (Date.now() - st.readyAt > 1500) st.ready = !!m.ready;
@@ -135,9 +143,22 @@
         setStatus(m.reason || '여기에는 놓을 수 없어요', 'bad');
         break;
       case 'start':
+        setCourse(m.course);
         st.phase = 'running'; st.inGame = true; st.result = null;
         showRun();
         break;
+      case 'prog': {
+        // 1초마다 오는 내 순위·진행도
+        if (st.screen !== 'pRun' || st.result) break;
+        const stage = st.map.stages[m.s];
+        $('pRace').classList.remove('hidden');
+        $('pRace').style.setProperty('--c', st.me.color || Render.COL.amber);
+        $('pRunRank').textContent = m.r + '등';
+        $('pRunStage').textContent = st.map.stages.length > 1 && stage ? `${m.s + 1}구간 ${stage.name}` : '';
+        $('pRunBar').style.width = Math.round(Math.max(0, Math.min(1, m.p)) * 100) + '%';
+        $('pRunMsg').textContent = `${m.n}명 중 지금 ${m.r}등으로 떨어지는 중이에요`;
+        break;
+      }
       case 'mine':
         st.result = m;
         showDone(m.label, m.order);
@@ -169,6 +190,7 @@
   }
 
   function applyLobby(m) {
+    setCourse(m.course);
     st.obsPer = m.obsPer | 0;
     st.players = (m.players || []).map(a => ({
       id: a[0], name: a[1], color: a[2], x: a[3], w: a[4], fontM: a[5],
@@ -225,7 +247,7 @@
     for (let y = 4.5; y <= 28.5; y += 0.5) for (let x = 2; x <= 28; x += 0.5) tries.push([x, y]);
     tries.sort((p, q) => Math.hypot(p[0] - 15, (p[1] - 17) * 1.4) - Math.hypot(q[0] - 15, (q[1] - 17) * 1.4));
     for (const [x, y] of tries) {
-      if (Sim.validateObstacle(MAP, list, { id: '__new', kind, x, y, a }).ok) return [x, y];
+      if (Sim.validateObstacle(st.map, list, { id: '__new', kind, x, y, a }).ok) return [x, y];
     }
     return null;
   }
@@ -252,7 +274,7 @@
     const e = st.edit;
     st.dirty = true;
     if (!e) { st.editOk = false; return { ok: false }; }
-    const v = Sim.validateObstacle(MAP, st.obstacles, { id: e.lid ? st.me.id + ':' + e.lid : '__new', kind: e.kind, x: e.x, y: e.y, a: e.a });
+    const v = Sim.validateObstacle(st.map, st.obstacles, { id: e.lid ? st.me.id + ':' + e.lid : '__new', kind: e.kind, x: e.x, y: e.y, a: e.a });
     st.editOk = v.ok;
     if (v.ok) setStatus(e.lid ? '이 자리로 옮길 수 있어요' : '여기에 놓을 수 있어요', 'ok');
     else setStatus(v.reason, 'bad');
@@ -361,7 +383,8 @@
     const pos = layoutPositions();
     let top = C.START_Y;
     for (const id in pos) top = Math.min(top, pos[id].y);
-    return { x0: C.VIEW.x0, x1: C.VIEW.x1, y0: Math.min(C.VIEW.y0, top - 1.3), y1: C.VIEW.y1 };
+    const y1 = st.map.id === 'short' ? C.VIEW.y1 : Render.LOBBY.finish + C.LABEL_BAND + 0.7;
+    return { x0: C.VIEW.x0, x1: C.VIEW.x1, y0: Math.min(C.VIEW.y0, top - 1.3), y1 };
   }
   function draw() {
     const cv = $('pCanvas'), v = view();
@@ -374,14 +397,18 @@
     const colorOf = id => { const p = st.players.find(q => q.id === id); return p ? p.color : Render.COL.chrome; };
     const segW = C.W / Math.max(1, st.labels.length);
     const mine = pos[st.me.id];
+    const map = st.map, cut = map.id !== 'short';
     Render.drawScene(ctx, T, {
-      map: MAP, view: v, mode: 'lobby',
-      mills: MAP.els.filter(e => e.kind === 'mill').map(el => ({ el, angle: Math.PI / 4 })),
+      map, view: v, mode: 'lobby',
+      mills: map.els.filter(e => e.kind === 'mill').map(el => ({ el, angle: Math.PI / 4 })),
+      finishAt: cut ? Render.LOBBY.finish : undefined,
+      cut: cut ? Object.assign({ text: Render.cutText(map) }, Render.LOBBY.cut) : null,
       obstacles: st.obstacles.filter(o => o.id !== editingId), colorOf,
       names: st.players.filter(p => pos[p.id]).map(p => ({
         id: p.id, text: p.name, color: p.color, x: pos[p.id].x, y: pos[p.id].y, fontM: p.fontM, w: p.w, me: p.id === st.me.id,
       })),
       segs: st.labels.map(label => ({ label, w: segW, closed: false })),
+      special: Render.specialLabels(st.labels),
       showZone: obsTab, showStart: true, showMillRange: obsTab, halo: obsTab,
       ghost: obsTab && st.edit ? Object.assign({ ok: st.editOk }, st.edit) : null,
       guide: !obsTab && mine ? { x: mine.x, y: mine.y } : null,

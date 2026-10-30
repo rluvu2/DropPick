@@ -4,7 +4,8 @@
 (function (root) {
   'use strict';
   const Sim = root.Sim, C = Sim.C, Glyph = root.Glyph, Render = root.Render, Net = root.Net;
-  const MAP = Sim.buildMap();
+  const maps = {};
+  const mapOf = id => maps[id] || (maps[id] = Sim.buildMap(id === 'short' ? 'short' : 'long'));
   const $ = id => document.getElementById(id);
   const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
   const store = kind => ({
@@ -19,7 +20,8 @@
   const st = {
     phase: 'setup',            // setup | lobby | countdown | running | done
     roomOpen: false,
-    setup: { labels: DEFAULT_LABELS, obsPer: 2, blind: false },
+    setup: { labels: DEFAULT_LABELS, obsPer: 2, blind: false, course: 'long' },
+    map: mapOf('long'), courseSel: 'long',
     labels: [], labRev: 1,
     code: null, net: null,
     players: [], pseq: 1, kicked: [],
@@ -27,6 +29,7 @@
     game: null, parts: [], shapes: {}, results: [], lastResults: {}, runToken: 0,
     acc: 0, countStart: 0, lastCount: 0, doneAt: 0,
     follow: true, cam: null, fx: new Render.Fx(), T: null, panelDirty: true,
+    speed: 1, trails: new Map(), stageSeen: 0, pack: null, focusY: null, inset: false, insetSince: 0, special: new Set(), manual: null, liveAt: 0, progAt: 0, mmRect: null,
     startArmed: false, abortArmed: false, drag: null, stats: { frames: 0, slowFrames: 0, maxSteps: 0, stepMs: 0, steps: 0 },
   };
 
@@ -105,7 +108,7 @@
   }
   function lobbyBase() {
     return {
-      t: 'lobby', obsPer: st.setup.obsPer,
+      t: 'lobby', obsPer: st.setup.obsPer, course: st.map.id,
       players: named().map(p => [p.id, p.name, p.color, r2(p.x), r2(p.w), r3(p.fontM),
         (p.ready || p.local ? 1 : 0) | (p.online || p.local ? 2 : 0) | (p.local ? 4 : 0), nObs(p.id)]),
     };
@@ -129,7 +132,7 @@
   function welcome(p) {
     send(p, {
       t: 'welcome', id: p.id, name: p.name, color: p.color, x: p.x, ready: p.ready, phase: phonePhase(),
-      obsPer: st.setup.obsPer, result: st.lastResults[p.id] || null, code: st.code, inGame: st.parts.includes(p.id),
+      obsPer: st.setup.obsPer, result: st.lastResults[p.id] || null, code: st.code, inGame: st.parts.includes(p.id), course: st.map.id,
     });
     if (p.name) sendLobby(p, true);
   }
@@ -199,7 +202,7 @@
     if (!Sim.OBS[m.kind]) return bad('잘못된 장애물이에요');
     if (!cur && nObs(p.id) >= st.setup.obsPer) return bad(st.setup.obsPer ? `장애물은 ${st.setup.obsPer}개까지예요` : '이번 판은 장애물이 없어요');
     const o = { id, owner: p.id, kind: m.kind, x: r2(+m.x), y: r2(+m.y), a: r3(Sim.normAngle(m.kind, +m.a || 0)) };
-    const v = Sim.validateObstacle(MAP, st.obstacles, o);
+    const v = Sim.validateObstacle(st.map, st.obstacles, o);
     if (!v.ok) return bad(v.reason);
     if (cur) Object.assign(cur, o);
     else st.obstacles.push(Object.assign(o, { seq: st.oseq++ }));
@@ -270,6 +273,7 @@
     const s = ss.get('plb.room');
     if (!s || !s.code || !Array.isArray(s.players)) return false;
     st.setup = Object.assign(st.setup, s.setup || {});
+    st.map = mapOf(st.setup.course); st.courseSel = st.map.id;
     const parsed = parseLabels(st.setup.labels);
     if (parsed.err) return false;
     st.labels = parsed.labels;
@@ -290,12 +294,15 @@
     st.results = []; st.lastResults = {}; st.shapes = {};
     st.game = null; st.acc = 0;
     st.countStart = performance.now(); st.lastCount = 0;
-    st.fx = new Render.Fx();
-    st.cam = null;
+    st.fx = new Render.Fx(st.map.F);
+    st.cam = null; st.manual = null;
+    st.trails = new Map(); st.stageSeen = 0; st.pack = null; st.focusY = null; st.inset = false;
     const token = ++st.runToken;
     Render.Sound.unlock();
-    for (const p of parts) send(p, { t: 'start' });
+    for (const p of parts) send(p, { t: 'start', course: st.map.id });
     $('results').innerHTML = '';
+    $('liveRank').innerHTML = '';
+    show('liveWrap', false);
     showPanel();
     Glyph.loadFont(parts.map(p => p.name).join('')).then(() => {
       if (token !== st.runToken) return;
@@ -308,9 +315,11 @@
       const seed = (root.crypto && root.crypto.getRandomValues ? root.crypto.getRandomValues(new Uint32Array(1))[0] : Math.random() * 2 ** 32) >>> 0 || 1;
       const labels = st.labels.slice();
       if (st.setup.blind) shuffle(labels, Sim.makeRng(seed ^ 0x5bd1e995));
+      // 가장 흔한 칸(보통 '꽝')이 아닌 칸은 '당첨'으로 보고 축하 연출을 한다. 모두 한 칸씩이면 없음
+      st.special = Render.specialLabels(labels);
       const obstacles = st.obstacles.filter(o => st.parts.includes(o.owner))
         .map(o => ({ id: o.id, owner: o.owner, kind: o.kind, x: o.x, y: o.y, a: o.a }));
-      st.game = new Sim.Game({ seed, map: MAP, labels, names, obstacles });
+      st.game = new Sim.Game({ seed, map: st.map, labels, names, obstacles });
       st.seed = seed;
     });
   }
@@ -331,7 +340,15 @@
         fx.float(Math.max(1.5, Math.min(C.W - 1.5, e.x)), e.label, color);
         Render.Sound.play('confirm');
         if (p) send(p, { t: 'mine', label: e.label, seg: e.seg, order });
-        addResultRow(order, p ? p.name : '?', color, e.label);
+        addResultRow(order, p ? p.name : '?', color, e.label, st.special.has(e.label));
+        st.trails.delete(e.id);
+        if (st.special.has(e.label)) {
+          banner(`${p ? p.name : '?'}: ${e.label}!`, 'win');
+          fx.confetti(Math.max(2, Math.min(C.W - 2, e.x)), st.map.F - 0.4, 70);
+          fx.pulse(e.x, Render.COL.amber);
+          fx.shake = 0.6;
+          Render.Sound.play('win');
+        } else fx.pulse(e.x, color);
         break;
       }
       case 'hit': fx.ring(e.x, e.y, Render.COL.brick, 0.6); Render.Sound.play('hit'); break;
@@ -343,10 +360,20 @@
       case 'bounce': fx.ring(e.x, e.y, Render.COL.teal, 1.2); Render.Sound.play('tramp'); break;
       case 'kick':
         fx.ring(e.x, e.y, Render.COL.magenta, 1.3);
+        fx.sparks(e.x, e.y, Render.COL.magenta, 5);
         if (!e.id) fx.kick(e.x, e.y);
         Render.Sound.play('bump');
         break;
-      case 'sudden': banner('서든데스! 유저 장애물이 모두 부서졌어요'); Render.Sound.play('break'); break;
+      case 'sudden':
+        // 긴 코스는 45초쯤엔 보통 다들 장애물 구역을 지나서, 구역에 이름이 남아 있을 때만 알린다
+        if (st.map.id === 'short' || e.busy) { banner('서든데스! 유저 장애물이 모두 부서졌어요'); Render.Sound.play('break'); }
+        break;
+      case 'rush':
+        if (st.map.id !== 'short') { banner('가속! 남은 이름이 더 빨리 떨어져요'); Render.Sound.play('rush'); }
+        break;
+      case 'unstick':
+        if (e.level >= 3 && e.level !== 9) st.trails.delete(e.id);   // 순간이동은 꼬리를 끊는다
+        break;
       case 'final': banner('마무리: 남은 이름은 모든 걸 통과해요'); break;
       case 'end': endGame(); break;
     }
@@ -355,6 +382,7 @@
   function endGame() {
     st.phase = 'done';
     st.doneAt = performance.now();
+    show('liveWrap', false);
     const results = st.results.map(r => ({ name: r.name, color: r.color, label: r.label }));
     for (const p of st.players) if (p.conn) send(p, { t: 'end', results });
     showPanel();
@@ -389,12 +417,14 @@
     $('runTitle').textContent = st.phase === 'countdown' ? '곧 시작해요' : st.phase === 'done' ? '끝' : '진행 중';
     st.panelDirty = true;
   }
-  function banner(text) {
+  // kind: '' (빨강, 경고) | 'stage' (구간 진입) | 'win' (당첨)
+  function banner(text, kind) {
     const b = $('banner');
+    if (kind === 'stage' && b.classList.contains('on') && b.classList.contains('win')) return;   // 당첨 알림을 덮지 않는다
     b.textContent = text;
-    b.classList.add('on');
+    b.className = 'banner on' + (kind ? ' ' + kind : '');
     clearTimeout(banner.t);
-    banner.t = setTimeout(() => b.classList.remove('on'), 3200);
+    banner.t = setTimeout(() => b.classList.remove('on'), kind === 'win' ? 3800 : 3000);
   }
   function hideOverlay() { $('overlay').classList.add('hidden'); }
 
@@ -470,9 +500,9 @@
     const left = g ? g.remaining : st.parts.length, open = g ? g.segments.openCount() : st.labels.length;
     $('runSub').textContent = `남은 이름 ${left} / 남은 칸 ${open}`;
   }
-  function addResultRow(order, name, color, label) {
+  function addResultRow(order, name, color, label, win) {
     const li = document.createElement('li');
-    li.className = 'new';
+    li.className = 'new' + (win ? ' win' : '');
     li.style.setProperty('--c', color);
     li.innerHTML = '<span class="ord"></span><span class="nm"></span><span class="lb"></span>';
     li.children[0].textContent = order;
@@ -485,11 +515,15 @@
   function showResults() {
     const ul = $('finalList');
     ul.innerHTML = '';
-    st.results.forEach((r, i) => {
+    // 당첨 칸을 먼저, 나머지는 들어온 순서대로
+    const rows = st.results.map((r, i) => Object.assign({ ord: i + 1, win: st.special.has(r.label) }, r));
+    rows.sort((a, b) => (b.win - a.win) || a.ord - b.ord);
+    rows.forEach(r => {
       const li = document.createElement('li');
+      if (r.win) li.className = 'win';
       li.style.setProperty('--c', r.color);
       li.innerHTML = '<span class="ord"></span><span class="nm"></span><span class="lb"></span>';
-      li.children[0].textContent = i + 1;
+      li.children[0].textContent = r.ord;
       li.children[1].textContent = r.name;
       li.children[2].textContent = r.label;
       ul.appendChild(li);
@@ -520,9 +554,8 @@
   }
 
   // ---------- 보드 ----------
-  function fullView(topY) {
-    return { x0: C.VIEW.x0, x1: C.VIEW.x1, y0: Math.min(C.VIEW.y0, topY - 1.4), y1: C.VIEW.y1 };
-  }
+  // 설정 화면에서는 고르는 중인 코스를 미리 보여준다
+  const mapNow = () => (st.phase === 'setup' ? mapOf(st.courseSel) : st.map);
   function lobbyNames() {
     const pos = layout();
     return named().map(p => ({ id: p.id, text: p.name, color: p.color, x: pos[p.id].x, y: pos[p.id].y, fontM: p.fontM, w: p.w, local: p.local }));
@@ -539,33 +572,72 @@
     }
     return out;
   }
-  function targetView(names, w, h) {
-    const top = names.reduce((m, n) => Math.min(m, n.y), C.START_Y);
-    const full = fullView(top);
-    if (!st.follow || st.phase !== 'running' || !names.length) return full;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const n of names) {
-      const r = Math.max(n.w || 1, n.h || 1) / 2;
-      x0 = Math.min(x0, n.x - r); x1 = Math.max(x1, n.x + r);
-      y0 = Math.min(y0, n.y - r); y1 = Math.max(y1, n.y + r);
+  // 대기실·카운트다운: 1구간 전체. 긴 코스는 결승선을 1구간 바로 아래에 줄여서 보여준다
+  function lobbyView(map, top) {
+    const y1 = map.id === 'short' ? C.VIEW.y1 : Render.LOBBY.finish + C.LABEL_BAND + 0.7;
+    return { x0: C.VIEW.x0, x1: C.VIEW.x1, y0: Math.min(C.VIEW.y0, top - 1.4), y1 };
+  }
+  // 진행 중: 보드 폭을 꽉 채우고 선두를 따라간다(앞을 조금 더 보여줌). 남은 이름이 셋 이하로 모여 있으면 확대.
+  // '전체 보기'는 남은 이름이 모두 들어오게. 미니맵을 끌면 4초 동안 그쪽을 본다. 오른쪽은 미니맵 자리로 비운다.
+  // 지금 보고 있는 무리를 계속 따라가다가, 다른 곳에 3명 이상 더 모인 무리가 생기면 그쪽으로 넘어간다
+  function packCenter(names, Hv) {
+    const ys = names.map(n => n.y).sort((a, b) => b - a);   // 앞(아래)부터
+    let best = null;
+    for (let i = 0; i < ys.length; i++) {
+      const bottom = ys[i] + 1.5;
+      let cnt = 0, sum = 0;
+      for (const y of ys) if (y <= bottom && y >= bottom - Hv + 2) { cnt++; sum += y; }
+      if (!best || cnt > best.cnt) best = { cnt, cy: sum / cnt };   // 같으면 앞쪽
     }
-    x0 -= 3; x1 += 3; y0 -= 3; y1 += 3;
-    if (y1 - y0 < 16) { const c = (y0 + y1) / 2; y0 = c - 8; y1 = c + 8; }
-    const aspect = w / Math.max(1, h);
-    let vw = x1 - x0, vh = y1 - y0;
-    if (vw / vh < aspect) vw = vh * aspect; else vh = vw / aspect;
-    const fw = full.x1 - full.x0, fh = full.y1 - full.y0;
-    vw = Math.min(vw, fw); vh = Math.min(vh, fh);
-    let cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    cx = Math.max(full.x0 + vw / 2, Math.min(full.x1 - vw / 2, cx));
-    cy = Math.max(full.y0 + vh / 2, Math.min(full.y1 - vh / 2, cy));
-    return { x0: cx - vw / 2, x1: cx + vw / 2, y0: cy - vh / 2, y1: cy + vh / 2 };
+    const cur = st.pack === null ? [] : ys.filter(y => Math.abs(y - st.pack) <= Hv * 0.5);
+    st.pack = cur.length && best.cnt < cur.length + 3 ? cur.reduce((a, b) => a + b, 0) / cur.length : best.cy;
+    return st.pack + Hv * 0.08;   // 가는 쪽(아래)을 조금 더
+  }
+  function raceView(names, w, h, now, insetFrac) {
+    insetFrac = insetFrac || 0;
+    const F = st.map.F, mmw = st.mmRect ? st.mmRect.w + 28 : 0;
+    const usable = Math.max(200, w - mmw), aspect = usable / Math.max(1, h);
+    const top = names.reduce((m, n) => Math.min(m, n.y), C.START_Y);
+    const lo = Math.min(C.VIEW.y0, top - 1.4), hi = F + C.LABEL_BAND + 0.8;
+    let width = C.W + 1.2, cx = C.W / 2, H = width / aspect, cy;
+    if (st.manual && now < st.manual.until) cy = st.manual.y;
+    else if (!names.length) cy = F;
+    else if (!st.follow) {
+      let y0 = Infinity, y1 = -Infinity;
+      for (const n of names) { y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); }
+      if (y1 - y0 + 7 > H) { H = y1 - y0 + 7; width = H * aspect; }
+      cy = (y0 + y1) / 2 + 0.5;
+    } else {
+      cy = null;
+      if (names.length <= 3) {
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const n of names) { x0 = Math.min(x0, n.x); x1 = Math.max(x1, n.x); y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); }
+        if (y1 - y0 < 9) {
+          width = Math.max(16, Math.min(C.W + 1.2, x1 - x0 + 12));
+          H = width / aspect;
+          cx = Math.max(width / 2 - 0.6, Math.min(C.W + 0.6 - width / 2, (x0 + x1) / 2));
+          cy = (y0 + y1) / 2 + 1;
+        }
+      }
+      if (cy === null) cy = packCenter(names, H * (1 - insetFrac));
+    }
+    st.focusY = cy;
+    cy += H * insetFrac / 2;   // 아래 결승선 띠에 가리는 만큼 내려서, 보이는 부분 가운데에 오게
+    const a = lo + H / 2, b = hi - H / 2;
+    cy = a > b ? (lo + hi) / 2 : Math.max(a, Math.min(b, cy));
+    const extra = mmw ? width * mmw / usable : 0;
+    return { x0: cx - width / 2, x1: cx + width / 2 + extra, y0: cy - H / 2, y1: cy + H / 2 };
   }
   function smooth(cam, t, dt) {
     if (!cam) return Object.assign({}, t);
-    const a = 1 - Math.exp(-dt * 2.6);
+    const far = Math.abs((t.y0 + t.y1) / 2 - (cam.y0 + cam.y1) / 2) > (t.y1 - t.y0);
+    const a = 1 - Math.exp(-dt * (far ? 5 : 3));
     for (const k of ['x0', 'x1', 'y0', 'y1']) cam[k] += (t[k] - cam[k]) * a;
     return cam;
+  }
+  function mmRectFor(map, w, h) {
+    const mw = 88, mh = Math.min(h - 28, mw * (map.F + 10) / (C.W + 2));
+    return { x: w - mw - 14, y: 14, w: mw, h: mh };
   }
 
   function segsForDraw() {
@@ -578,22 +650,121 @@
   function draw(dt, now) {
     const cv = $('board');
     const { ctx, w, h } = Render.setupCanvas(cv);
-    const running = st.game && (st.phase === 'running' || st.phase === 'done' || st.phase === 'countdown');
-    const names = running ? gameNames() : st.phase === 'setup' && !st.roomOpen ? [] : lobbyNames();
-    st.cam = smooth(st.cam, targetView(names, w, h), dt);
-    const T = st.T = Render.makeT(w, h, st.cam, 14);
-    const lobbyish = st.phase === 'lobby' || st.phase === 'setup';
+    const map = mapNow(), clock = now / 1000, g = st.game;
+    const inGame = g && (st.phase === 'running' || st.phase === 'done' || st.phase === 'countdown');
+    const lobbyLike = !inGame || st.phase === 'countdown';
+    const names = inGame ? gameNames() : st.phase === 'setup' && !st.roomOpen ? [] : lobbyNames();
+    st.mmRect = map.id === 'short' ? null : mmRectFor(map, w, h);
+    const top = names.reduce((m, n) => Math.min(m, n.y), C.START_Y);
+    // 결승선 띠: 긴 코스에서 본 화면에 결승선이 안 보일 때 아래에 결승선 카메라를 붙인다 (0.4초 넘게 같은 상태일 때만 전환)
+    const ih = Math.round(Math.min(h * 0.24, 210)), frac = ih / h;
+    if (!lobbyLike && map.id !== 'short' && names.length) {
+      const probe = raceView(names, w, h, now, st.inset ? frac : 0);
+      const want = probe.y1 - (probe.y1 - probe.y0) * (st.inset ? frac : 0) < map.F - 0.5;
+      if (want !== st.inset) { if (!st.insetSince) st.insetSince = now; if (now - st.insetSince > 400) { st.inset = want; st.insetSince = 0; } }
+      else st.insetSince = 0;
+    } else { st.inset = false; st.insetSince = 0; }
+    st.cam = smooth(st.cam, lobbyLike ? lobbyView(map, top) : raceView(names, w, h, now, st.inset ? frac : 0), dt);
+    const T = st.T = Render.makeT(w, h, st.cam, lobbyLike ? 14 : 0);
+    const cutView = lobbyLike && map.id !== 'short';
     let countdown = null;
-    if (st.phase === 'countdown') countdown = Math.max(1, COUNT_SEC - Math.floor((now - st.countStart) / 1000));
-    Render.drawScene(ctx, T, {
-      map: MAP, view: st.cam, mode: st.phase,
-      mills: st.game ? st.game.mills.map(m => ({ el: m.el, angle: m.body.getAngle() })) : MAP.els.filter(e => e.kind === 'mill').map(el => ({ el, angle: el.speed * now / 1000 })),
-      obstacles: st.game ? [...st.game.obs.values()] : st.obstacles,
-      colorOf,
-      names,
-      segs: segsForDraw(), blind: st.setup.blind && st.phase !== 'setup', now: st.game ? st.game.t : 0,
-      showZone: lobbyish && st.setup.obsPer > 0, showStart: lobbyish || st.phase === 'countdown', showMillRange: lobbyish,
+    if (st.phase === 'countdown') { const el = (now - st.countStart) / 1000; countdown = { n: Math.max(1, COUNT_SEC - Math.floor(el)), f: el % 1 }; }
+    const lobbyish = st.phase === 'lobby' || st.phase === 'setup';
+    const shake = st.fx.shake;
+    if (shake > 0) { ctx.save(); ctx.translate((Math.random() - 0.5) * 9 * shake, (Math.random() - 0.5) * 9 * shake); }
+    const scene = {
+      map, view: st.cam, clock, now: g ? g.t : 0, special: st.game ? st.special : Render.specialLabels(st.phase === 'setup' ? parseLabels($('labels').value).labels : st.labels),
+      mills: g ? g.mills.map(m => ({ el: m.el, angle: m.body.getAngle() })) : map.els.filter(e => e.kind === 'mill').map(el => ({ el, angle: el.speed * clock })),
+      movers: g ? g.movers.map(m => { const p = m.body.getPosition(); return { el: m.el, x: p.x, y: p.y, a: m.body.getAngle() }; })
+        : map.els.filter(e => e.kind === 'pendulum' || e.kind === 'slider' || e.kind === 'disc').map(el => Object.assign({ el }, Sim.moverPose(el, clock))),
+      obstacles: g ? [...g.obs.values()] : st.obstacles,
+      colorOf, names,
+      trails: inGame && !lobbyLike ? [...st.trails.entries()].map(([id, pts]) => ({ color: colorOf(id), pts })) : null,
+      segs: segsForDraw(), blind: st.setup.blind && st.phase !== 'setup',
+      finishAt: cutView ? Render.LOBBY.finish : undefined,
+      cut: cutView ? Object.assign({ text: Render.cutText(map) }, Render.LOBBY.cut) : null,
+      showZone: lobbyish && st.setup.obsPer > 0, showStart: lobbyLike, showMillRange: lobbyish,
       fx: st.fx, countdown,
+    };
+    Render.drawScene(ctx, T, scene);
+    if (shake > 0) ctx.restore();
+    if (st.inset) drawInset(ctx, w, h, ih, scene);
+    if (st.mmRect) {
+      let lead = null;
+      for (const n of names) if (!lead || n.y > lead.y) lead = n;
+      Render.drawMinimap(ctx, st.mmRect, { map, view: lobbyLike ? null : st.cam, names: names.map(n => ({ x: n.x, y: n.y, color: n.color, lead: n === lead && !lobbyLike })) });
+    }
+  }
+
+  // 아래 띠에 결승선 카메라: 보드 폭 전체, 결승선 위 3.6m부터 칸 이름까지
+  function drawInset(ctx, w, h, ih, scene) {
+    const mmw = st.mmRect ? st.mmRect.w + 28 : 0, iw = Math.max(200, w - mmw), F = st.map.F, y = h - ih;
+    // 보드 폭을 띠 폭에 꽉 맞추고, 남는 높이만큼 결승선 위를 보여준다
+    const vh = (C.W + 1.2) * ih / iw, vy1 = F + C.LABEL_BAND + 0.5;
+    const view = { x0: -0.6, x1: C.W + 0.6, y0: vy1 - vh, y1: vy1 };
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, y, iw, ih); ctx.clip();
+    ctx.translate(0, y);
+    Render.drawScene(ctx, Render.makeT(iw, ih, view, 0), Object.assign({}, scene, { view, trails: scene.trails }));
+    ctx.restore();
+    ctx.fillStyle = Render.COL.laser;
+    ctx.fillRect(0, y - 1, iw, 2);
+    ctx.font = '700 12px "IBM Plex Sans KR", sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    const label = '결승선';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = Render.COL.laser;
+    ctx.fillRect(10, y + 8, tw + 14, 20);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, 17, y + 11);
+  }
+
+  // ---------- 진행 중 부가 정보 ----------
+  function updateTrails() {
+    for (const n of st.game.names.values()) {
+      if (n.done || !n.body) continue;
+      const c = n.body.getWorldCenter();
+      let pts = st.trails.get(n.id);
+      if (!pts) { pts = []; st.trails.set(n.id, pts); }
+      const last = pts[pts.length - 1];
+      if (!last || Math.hypot(c.x - last[0], c.y - last[1]) > 0.35) { pts.push([c.x, c.y]); if (pts.length > 9) pts.shift(); }
+    }
+  }
+  function aliveByProgress() {
+    const out = [];
+    for (const n of st.game.names.values()) if (!n.done && n.body) out.push({ id: n.id, y: n.body.getWorldCenter().y });
+    return out.sort((a, b) => b.y - a.y);
+  }
+  // 선두가 새 구간에 들어가면 알림
+  function checkStage(alive) {
+    if (st.map.stages.length < 2 || !alive.length || st.focusY === null) return;
+    const si = Sim.stageAt(st.map, st.focusY);
+    if (si > st.stageSeen) {
+      st.stageSeen = si;
+      banner(`${si + 1}구간 ${st.map.stages[si].name}`, 'stage');
+      Render.Sound.play('stage');
+    }
+  }
+  function renderLiveRank(alive) {
+    const ul = $('liveRank'), done = st.results.length;
+    ul.innerHTML = '';
+    alive.slice(0, 5).forEach((a, i) => {
+      const p = byId(a.id), li = document.createElement('li');
+      li.innerHTML = '<span class="rk"></span><i></i><span class="nm"></span><span class="st"></span>';
+      li.children[0].textContent = done + i + 1;
+      li.children[1].style.background = p ? p.color : Render.COL.chrome;
+      li.children[2].textContent = p ? p.name : '?';
+      li.children[3].textContent = st.map.stages.length > 1 ? `${Sim.stageAt(st.map, a.y) + 1}구간` : '';
+      ul.appendChild(li);
+    });
+    show('liveWrap', alive.length > 0);
+  }
+  // 폰에 1초마다 내 순위·진행도만 보낸다 (위치 스트리밍은 하지 않음)
+  function sendProgress(alive) {
+    const done = st.results.length, F = st.map.F;
+    alive.forEach((a, i) => {
+      const p = byId(a.id);
+      if (p && p.conn) send(p, { t: 'prog', p: r3(Math.max(0, Math.min(1, a.y / F))), r: done + i + 1, s: Sim.stageAt(st.map, a.y), n: st.parts.length });
     });
   }
 
@@ -619,7 +790,7 @@
     }
     const g = st.game;
     if (st.phase === 'running' && g && !g.over) {
-      st.acc += dt * (slowMo(g) ? 0.4 : 1);
+      st.acc += dt * st.speed * (slowMo(g) ? 0.4 : 1);
       let n = 0;
       const t0 = performance.now();
       while (st.acc >= C.DT && n < 16) {
@@ -631,6 +802,11 @@
       if (n >= 16) { st.acc = 0; st.stats.slowFrames++; }
       if (n) { st.stats.steps += n; st.stats.stepMs += performance.now() - t0; st.stats.maxSteps = Math.max(st.stats.maxSteps, n); }
       st.stats.frames++;
+      updateTrails();
+      const alive = aliveByProgress();
+      checkStage(alive);
+      if (now - st.liveAt > 250) { st.liveAt = now; renderLiveRank(alive); }
+      if (now - st.progAt > 1000) { st.progAt = now; sendProgress(alive); }
     }
     st.fx.update(dt);
     draw(dt, now);
@@ -643,7 +819,7 @@
     for (const n of g.names.values()) {
       if (n.done || !n.body) continue;
       const y = n.body.getWorldCenter().y;
-      if (y > C.FINISH_Y - 2.5 && y < C.FINISH_Y) return true;
+      if (y > g.F - 2.5 && y < g.F) return true;
     }
     return false;
   }
@@ -661,8 +837,15 @@
   function bindBoard() {
     const cv = $('board');
     const pt = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const onMinimap = (px, py) => {
+      const r = st.mmRect;
+      return r && (st.phase === 'running' || st.phase === 'done') && px >= r.x - 8 && px <= r.x + r.w + 8 && py >= r.y - 8 && py <= r.y + r.h + 8;
+    };
+    const lookAt = py => { st.manual = { y: Render.minimapGeom(st.map, st.mmRect).toY(py), until: performance.now() + 4000 }; };
     cv.addEventListener('pointerdown', e => {
-      const [px, py] = pt(e), hit = hitLocal(px, py);
+      const [px, py] = pt(e);
+      if (onMinimap(px, py)) { st.drag = { mm: true }; lookAt(py); cv.setPointerCapture(e.pointerId); return; }
+      const hit = hitLocal(px, py);
       if (!hit) return;
       st.drag = { id: hit.n.id, off: hit.off };
       cv.setPointerCapture(e.pointerId);
@@ -670,10 +853,11 @@
     });
     cv.addEventListener('pointermove', e => {
       const [px, py] = pt(e);
+      if (st.drag && st.drag.mm) { lookAt(py); return; }
       if (st.drag) {
         const p = byId(st.drag.id);
         if (p) { p.x = Sim.clampDropX(r2(st.T.mx(px) - st.drag.off), p.w); scheduleLobby(); }
-      } else cv.style.cursor = hitLocal(px, py) ? 'grab' : '';
+      } else cv.style.cursor = onMinimap(px, py) ? 'pointer' : hitLocal(px, py) ? 'grab' : '';
     });
     const end = () => { if (st.drag) { st.drag = null; cv.style.cursor = ''; } };
     cv.addEventListener('pointerup', end);
@@ -687,7 +871,13 @@
     $('obsOut').textContent = st.setup.obsPer;
     $('blind').checked = !!st.setup.blind;
     renderSetupHint();
-    const saveSetup = () => ls.set('plb.setup', { labels: ta.value, obsPer: +$('obsOut').textContent, blind: $('blind').checked });
+    const saveSetup = () => ls.set('plb.setup', { labels: ta.value, obsPer: +$('obsOut').textContent, blind: $('blind').checked, course: st.courseSel });
+    const pickCourse = id => {
+      st.courseSel = id === 'short' ? 'short' : 'long';
+      for (const b of $('coursePick').children) { const on = b.dataset.course === st.courseSel; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }
+    };
+    pickCourse(st.courseSel);
+    for (const b of $('coursePick').children) b.onclick = () => { pickCourse(b.dataset.course); st.cam = null; saveSetup(); };
     ta.addEventListener('input', () => { renderSetupHint(); $('setupErr').textContent = ''; saveSetup(); });
     const step = d => { $('obsOut').textContent = Math.max(0, Math.min(5, +$('obsOut').textContent + d)); saveSetup(); };
     $('obsMinus').onclick = () => step(-1);
@@ -698,7 +888,8 @@
       const parsed = renderSetupHint();
       if (parsed.err) { $('setupErr').textContent = parsed.err; return; }
       const prevLabels = st.labels.join('\n'), prevBlind = st.setup.blind, prevObs = st.setup.obsPer;
-      st.setup = { labels: ta.value, obsPer: +$('obsOut').textContent, blind: $('blind').checked };
+      st.setup = { labels: ta.value, obsPer: +$('obsOut').textContent, blind: $('blind').checked, course: st.courseSel };
+      st.map = mapOf(st.courseSel);
       st.labels = parsed.labels;
       if (prevLabels !== st.labels.join('\n') || prevBlind !== st.setup.blind) st.labRev++;
       if (st.setup.obsPer < prevObs) trimObstacles();
@@ -709,8 +900,10 @@
       showPanel();
       scheduleLobby();
     };
-    $('cancelEdit').onclick = () => { st.phase = 'lobby'; showPanel(); scheduleLobby(); };
+    $('cancelEdit').onclick = () => { st.courseSel = st.map.id; pickCourse(st.courseSel); st.phase = 'lobby'; showPanel(); scheduleLobby(); };
     $('editSetup').onclick = () => {
+      st.courseSel = st.map.id;
+      pickCourse(st.courseSel);
       ta.value = st.setup.labels;
       $('obsOut').textContent = st.setup.obsPer;
       $('blind').checked = st.setup.blind;
@@ -758,6 +951,11 @@
       st.follow = !st.follow;
       $('camBtn').textContent = st.follow ? '따라가기' : '전체 보기';
     };
+    $('speedBtn').onclick = () => {
+      st.speed = st.speed === 1 ? 2 : 1;
+      $('speedBtn').textContent = st.speed === 1 ? '1배속' : '2배속';
+      $('speedBtn').classList.toggle('on', st.speed === 2);
+    };
     $('soundBtn').onclick = () => {
       Render.Sound.on = !Render.Sound.on;
       Render.Sound.unlock();
@@ -794,7 +992,9 @@
       st.setup.labels = saved.labels;
       st.setup.obsPer = Math.max(0, Math.min(5, saved.obsPer | 0));
       st.setup.blind = !!saved.blind;
+      st.setup.course = saved.course === 'short' ? 'short' : 'long';
     }
+    st.map = mapOf(st.setup.course); st.courseSel = st.map.id;
     if (!restoreRoom()) st.labels = parseLabels(st.setup.labels).labels;
     bindUI();
     bindBoard();

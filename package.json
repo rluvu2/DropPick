@@ -4,12 +4,13 @@
   "private": true,
   "description": "핀볼형 사다리타기 — 이름 글자가 물리 바디가 되어 떨어지고, 레이저 결승선의 칸을 통과하면 결과가 확정되는 파티 게임",
   "scripts": {
-    "test": "node test/headless.js 200",
+    "test": "node test/headless.js 200 && node test/headless.js 60 1 --course long",
     "serve": "node test/server.js 8080",
     "e2e": "node test/e2e.js --phones 30 --obs 2 --games 2",
     "e2e:real": "node test/e2e.js --real --phones 30 --obs 2 --games 1",
-    "stress": "node test/stress.js 2000 --players 30 --extra 0 --obs 2",
-    "glyphs": "node test/export-glyphs.js"
+    "stress": "node test/stress.js 2000 --players 30 --extra 0 --obs 2 --course long",
+    "glyphs": "node test/export-glyphs.js",
+    "stress:short": "node test/stress.js 2000 --players 30 --extra 0 --obs 2 --course short"
   },
   "devDependencies": {
     "peerjs": "1.5.5",

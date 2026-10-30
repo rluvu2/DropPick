@@ -29,7 +29,7 @@ const N = +process.argv[2] || 30, GAMES = +process.argv[3] || 2;
     await host.evaluate(() => {
       PLB.st.stats = { frames: 0, slowFrames: 0, maxSteps: 0, stepMs: 0, steps: 0 };
       window.__ft = []; let last = performance.now();
-      (function f(t) { const g = PLB.st.game; window.__ft.push([t - last, PLB.st.phase, g ? g.remaining : -1, g ? +g.t.toFixed(2) : 0]); last = t; if (PLB.st.phase !== 'done') requestAnimationFrame(f); })(performance.now());
+      (function f(t) { const g = PLB.st.game; window.__ft.push([t - last, PLB.st.phase, g ? g.remaining : -1, g ? +g.t.toFixed(2) : 0, PLB.st.stageSeen, PLB.st.inset ? 1 : 0, document.getElementById('banner').textContent.slice(0, 12)]); last = t; if (PLB.st.phase !== 'done') requestAnimationFrame(f); })(performance.now());
     });
     const w0 = Date.now();
     await host.click('#startBtn');

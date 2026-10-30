@@ -1,0 +1,12 @@
+{
+  "_사용법": "이미지를 assets/ 폴더에 넣고 아래 값에 파일 이름을 적으면 게임이 불러서 씁니다. null이면 코드로 그린 그림을 씁니다.",
+  "images": {
+    "side": null,
+    "stage1": null,
+    "stage2": null,
+    "stage3": null,
+    "stage4": null,
+    "stage5": null,
+    "stage6": null
+  }
+}

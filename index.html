@@ -6,6 +6,13 @@
 <title>핀볼 사다리</title>
 <meta name="description" content="이름 글자가 그대로 떨어지는 핀볼형 사다리타기. 큰 화면에서 방을 열고 폰으로 QR을 찍어 참가하세요.">
 <meta name="theme-color" content="#140F26">
+<meta property="og:type" content="website">
+<meta property="og:title" content="핀볼 사다리">
+<meta property="og:description" content="이름이 글자 모양 그대로 떨어지는 핀볼 사다리타기. 큰 화면에서 방을 열고 폰으로 QR을 찍어 참가하세요.">
+<meta property="og:image" content="https://rluvu2.github.io/DropPick/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23140F26'/%3E%3Ccircle cx='16' cy='11' r='5' fill='%23FFB547'/%3E%3Cpath d='M4 24h7M13 24h6M21 24h7' stroke='%23FF3B5C' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -44,6 +51,13 @@
           <textarea id="labels" spellcheck="false" placeholder="줄바꿈이나 쉼표로 구분&#10;꽝*3 처럼 쓰면 3칸"></textarea>
           <span class="hint"><span id="labelsHint"></span> 줄바꿈이나 쉼표로 구분하고, 꽝*3처럼 쓰면 같은 칸을 여러 개 만들어요. 최대 30칸.</span>
         </label>
+        <div class="field">
+          <span class="field-label">코스</span>
+          <div id="coursePick" class="course-pick" role="radiogroup" aria-label="코스">
+            <button type="button" data-course="long" role="radio" aria-checked="true"><b>긴 코스</b><span>6구간, 한 판 40초쯤</span></button>
+            <button type="button" data-course="short" role="radio" aria-checked="false"><b>짧은 코스</b><span>1구간, 한 판 20초쯤</span></button>
+          </div>
+        </div>
         <div class="field">
           <span class="field-label">1인당 장애물</span>
           <div class="stepper">
@@ -106,11 +120,16 @@
           <h1 id="runTitle" class="title small">진행 중</h1>
           <div class="head-tools">
             <button id="camBtn" class="icon-btn" type="button">따라가기</button>
+            <button id="speedBtn" class="icon-btn" type="button">1배속</button>
             <button id="soundBtn" class="icon-btn" type="button">소리 켬</button>
           </div>
         </div>
         <div class="clock-row"><span id="clock" class="clock">0.0</span><span class="clock-unit">초</span></div>
         <p id="runSub" class="sub">남은 이름 0 / 남은 칸 0</p>
+        <div id="liveWrap" class="live hidden">
+          <span class="field-label">지금 앞서가는 이름</span>
+          <ol id="liveRank" class="live-rank"></ol>
+        </div>
         <ol id="results" class="results"></ol>
         <div class="actions">
           <button id="abortBtn" class="link danger" type="button">중단하고 대기실로</button>
@@ -192,6 +211,10 @@
       <section id="pRun" class="p-center hidden">
         <span id="pRunMe" class="me-chip"></span>
         <h1 class="title small">큰 화면을 보세요</h1>
+        <div id="pRace" class="p-race hidden">
+          <div class="race-top"><b id="pRunRank">-</b><span id="pRunStage"></span></div>
+          <div class="race-bar" aria-hidden="true"><i id="pRunBar"></i></div>
+        </div>
         <p id="pRunMsg" class="hint">이름이 떨어지는 중이에요</p>
       </section>
 

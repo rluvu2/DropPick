@@ -1,6 +1,6 @@
 // 브라우저 안에서 직접 판을 돌린다: 실제 폰트로 Glyph.trace → Sim.Game을 최대 속도로 진행.
 // (Node 헤드리스와 같은 코드지만, 브라우저 엔진·실제 글자 모양으로 한 번 더 확인하는 용도)
-//   node test/browser-batch.js [판 수] [--pages 8] [--players 30] [--obs 2] [--mode random|block] [--crowd] [--out file.json]
+//   node test/browser-batch.js [판 수] [--pages 8] [--players 30] [--obs 2] [--course long|short] [--mode random|block] [--crowd] [--out file.json]
 const fs = require('fs');
 const { serve } = require('./server');
 const { launch, routeCdn } = require('./browser');
@@ -14,6 +14,7 @@ const OBS = +opt('obs', 2);
 const MODE = opt('mode', 'random');
 const CROWD = argv.includes('--crowd');
 const OUT = opt('out', null);
+const COURSE = opt('course', 'long');
 const NAMES = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'fixtures', 'names.json'), 'utf8')).map(g => g.text);
 
 (async () => {
@@ -28,9 +29,9 @@ const NAMES = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'fixtur
     const page = await ctx.newPage();
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await page.waitForFunction(() => window.Glyph && window.Sim);
-    return page.evaluate(async ({ n, seed0, P, OBS, MODE, CROWD, NAMES }) => {
+    return page.evaluate(async ({ n, seed0, P, OBS, MODE, CROWD, NAMES, COURSE }) => {
       await Glyph.loadFont(NAMES.join(''));
-      const map = Sim.buildMap(), out = [];
+      const map = Sim.buildMap(COURSE), out = [];
       for (let g = 0; g < n; g++) {
         const rnd = Sim.makeRng(seed0 + g * 31);
         const pool = NAMES.slice(), names = [];
@@ -51,30 +52,31 @@ const NAMES = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'fixtur
         }
         const labels = names.map((_, i) => 'L' + i);
         const game = new Sim.Game({ seed: seed0 * 3 + g, map, labels, names, obstacles });
-        let sudden = false, final = false, teleport = false, unstick = 0, stall = 0, confirms = 0;
+        let sudden = false, rush = false, final = false, teleport = false, unstick = 0, stall = 0, confirms = 0;
         const w0 = performance.now();
         while (!game.over && game.t < 200) {
           game.step();
           for (const e of game.drainEvents()) {
             if (e.t === 'confirm') confirms++;
             else if (e.t === 'sudden') sudden = true;
+            else if (e.t === 'rush') rush = true;
             else if (e.t === 'final') final = true;
             else if (e.t === 'unstick') { if (e.level === 9) stall++; else { unstick++; if (e.level >= 3) teleport = true; } }
           }
         }
         const segs = new Set(game.results.map(r => r.seg));
         const ok = game.over && game.results.length === P && segs.size === P && confirms === P;
-        out.push({ t: +game.t.toFixed(2), ok, sudden, final, teleport, unstick, stall, nObs: obstacles.length, ms: Math.round(performance.now() - w0) });
+        out.push({ t: +game.t.toFixed(2), ok, sudden, rush, final, teleport, unstick, stall, nObs: obstacles.length, ms: Math.round(performance.now() - w0) });
       }
       return out;
-    }, { n, seed0: 50000 + k * 7919, P: PLAYERS, OBS, MODE, CROWD, NAMES });
+    }, { n, seed0: 50000 + k * 7919, P: PLAYERS, OBS, MODE, CROWD, NAMES, COURSE });
   }));
   const games = parts.flat(), N = games.length;
   const c = f => games.filter(f).length, pc = k => (100 * k / N).toFixed(2) + '%';
   const times = games.map(g => g.t).sort((a, b) => a - b), q = p => times[Math.min(N - 1, Math.floor(N * p))];
   const sum = {
-    where: 'browser', games: N, players: PLAYERS, obsPer: OBS, mode: MODE, crowd: CROWD,
-    fails: c(g => !g.ok), sudden45: pc(c(g => g.sudden)), final75: pc(c(g => g.final)),
+    where: 'browser', course: COURSE, games: N, players: PLAYERS, obsPer: OBS, mode: MODE, crowd: CROWD,
+    fails: c(g => !g.ok), sudden45: pc(c(g => g.sudden)), rush: pc(c(g => g.rush)), final75: pc(c(g => g.final)),
     teleportGames: pc(c(g => g.teleport)), stallGames: pc(c(g => g.stall > 0)), anyRescue: pc(c(g => g.unstick + g.stall > 0)),
     time: { p50: q(0.5), p90: q(0.9), p99: q(0.99), max: times[N - 1] },
     avgSimMsPerGame: Math.round(games.reduce((s, g) => s + g.ms, 0) / N), wallSeconds: Math.round((Date.now() - t0) / 1000),

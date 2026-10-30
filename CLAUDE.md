@@ -21,8 +21,11 @@ PC(큰 화면)가 방을 열면 참가자가 폰으로 QR을 찍어 들어와 **
 6. 참가자는 **장애물을 설치**할 수 있다. 길막을 막기 위해 다음 장치를 둔다.
    - 벽돌은 3번 맞으면 부서진다. 트램펄린과 범퍼는 3번 쓰면 사라진다.
    - 설치 금지 구역과 최소 간격을 강제한다.
-   - 45초 서든데스에 전부 파괴된다.
+   - 45초 서든데스에 전부 파괴된다. (두 코스 모두. 긴 코스는 보통 그때 다들 1구간을 지나 있어서 조용히 지나간다)
 7. 이름은 **글자 외곽선 모양 그대로** 물리 바디가 된다(공 모양 아님).
+8. **코스는 PC 설정에서 고른다**: 긴 코스(기본, 6구간, 136m, 한 판 약 40초) / 짧은 코스(1구간, 31m, 약 20초).
+   - 2026-10-29 사용자 요청: "마블룰렛을 참고해 더 길고 세련되게". 장르 수준의 연출(긴 코스, 카메라, 미니맵, 실시간 순위,
+     파티클, 배속)만 참고하고, 맵 배치·그림·이름은 베끼지 않는다. 우리만의 정체성(글자 바디, 레이저 칸, 폰 장애물)은 유지.
 
 ---
 
@@ -36,8 +39,9 @@ PC(큰 화면)가 방을 열면 참가자가 폰으로 QR을 찍어 들어와 **
 - `src/style.css` — 호스트·폰 UI 스타일 (디자인 토큰 포함).
 - 테스트: `test/headless.js`(물리), `test/stress.js`(병렬 대량), `test/e2e.js`(호스트 1 + 폰 30), `test/fakepeer.js`, `test/export-glyphs.js` → `test/fixtures/names.json`(실제 글자 모양 50개), `test/browser-batch.js`(브라우저 안에서 대량), `test/host-perf.js`(호스트 fps), `test/server.js`, `test/browser.js`.
 - 배포: GitHub Pages `https://rluvu2.github.io/DropPick/` (main / root).
+- 2차(2026-10-29): 긴 코스 + 연출 — 아래 "긴 코스와 연출" 참고.
 
-### 검증 결과 (2026-10-29, 30명 · 실제 글자 모양 50종)
+### 검증 결과 — 짧은 코스 (2026-10-29, 30명 · 실제 글자 모양 50종)
 | 시나리오 | 판 수 | 안 끝난 판 | 45초 서든데스 | 75초 마무리 | 순간이동 나온 판 | 최장 |
 |---|---|---|---|---|---|---|
 | 장애물 1인 2개, 무작위 (평균 22.7개 설치) | 2000 | 0 | 0 | 0 | 7.4% | 34.4초 |
@@ -51,13 +55,58 @@ PC(큰 화면)가 방을 열면 참가자가 폰으로 QR을 찍어 들어와 **
 - E2E(**배포된 사이트 + 진짜 PeerJS 클라우드 + WebRTC**, 폰 30대 각각 별도 컨텍스트, 실제 CDN) 전 항목 통과.
   호스트 새로고침 후 30대 재접속 2.4초, 호스트 약 50fps, 대기실 메시지 2.6KB.
 
+### 검증 결과 — 긴 코스 (2026-10-29, 30명 · 실제 글자 모양 50종)
+| 시나리오 | 판 수 | 안 끝난 판 | 45초 장애물 파괴(조용히) | 90초 가속 | 120초 마무리 | 순간이동 나온 판 | 최장 |
+|---|---|---|---|---|---|---|---|
+| 장애물 1인 2개, 무작위 (평균 22.7개) | 2000 | 0 | 3.7% | 0 | 0 | 7.7% | 55.9초 |
+| 장애물 1인 5개, 무작위 (평균 25.5개) | 1000 | 0 | 5.2% | 0 | 0 | 6.2% | 54.4초 |
+| 길막 시도: 납작한 벽돌·트램펄린 (평균 17.7개) | 1000 | 0 | 3.6% | 0 | 0 | 9.1% | 55.6초 |
+| 30명이 전부 한가운데서 출발 | 1000 | 0 | 7.5% | 0 | 0 | 7.9% | 62.2초 |
+- 합계 5000판 미종료 0 → 95% 신뢰 상한 약 0.06%. 소요 시간 p50 ≈ 38~39초, p99 ≈ 48~50초.
+- 가벼운 끼임(튕기기)은 판의 89~95%, 순환 탈출은 31~36%(구간이 많아서 짧은 코스보다 조금 높음).
+- 출발 x와 통과 x의 상관은 0.02 — 긴 코스는 거의 운이다(짧은 코스 0.46).
+
 ### 30명 검증에서 알게 된 것 (중요)
 - **PeerJS json 직렬화는 16300바이트 이상 메시지를 조용히 버린다.** 객체 형식 lobby 메시지는 30명 × 장애물 5개에서 17KB를 넘는다 → 배열로 압축(아래 프로토콜). 30명 실측 2.6KB. `net.js`가 16000바이트 이상은 보내지 않고 콘솔 에러를 낸다. `fakepeer.js`도 같은 한도를 흉내 낸다.
 - **이름을 매 프레임 회전된 텍스트로 그리면 30명에서 프레임당 100ms를 넘는다**(GPU 없는 환경). 이름마다 비트맵 스프라이트를 만들어 `drawImage`로 돌려 그린다(`render.js nameSprite`, 확대 배율이 바뀌면 프레임당 6개씩만 다시 만듦). 레이저 글로우도 `shadowBlur` 대신 넓은 반투명 선. → 헤드리스(소프트웨어 렌더링)에서도 30명 60fps.
 - 물리 비용: 실제 글자 모양 30명 ≈ 스텝당 0.5~2ms (예산 8.3ms). 다른 무거운 작업과 CPU를 나눠 쓰면 크게 느려지므로 성능 측정은 단독으로 돌린다.
 - **장애물 자리**: 설치 간격 규칙(맵 1.4m, 장애물끼리 1.5m) 때문에 보드에는 약 25~30개가 한계다. 30명 × 2개면 절반쯤만 놓인다. 빈자리가 없으면 폰에 "빈자리가 없어요"가 뜬다.
 - 호스트 탭이 백그라운드가 되면 rAF가 멈춰 게임이 멈춘다. 테스트에서는 `bringToFront()`로 호스트 탭을 앞에 둔다.
-- 도구 주의: 파일을 쓸 때 정규식에 `​` 같은 이스케이프를 쓰면 실제 보이지 않는 문자로 바뀌어 문법 오류가 난 적이 있다. 문자 범위는 `codePointAt` 비교로 쓴다.
+
+---
+
+## 긴 코스와 연출 (2026-10-29 추가)
+
+### 코스 (sim.js)
+- `Sim.COURSES = { short, long }`, `Sim.buildMap(course)` → `{ id, W, F, els, stages:[{name,y0,y1}], timers:{sudden,rush,final}, view }`.
+  - 인자 없이 `buildMap()`은 짧은 코스(기존 테스트 호환). 짧은 코스는 예전과 물리적으로 완전히 같다(헤드리스 수치 동일 확인).
+  - 긴 코스 = 1구간(짧은 코스 그대로) + 2구간 지그재그 슬로프 + 3구간 범퍼 정원 + 4구간 시계추 골짜기(시계추·좌우 발판) + 5구간 회전 원판 + 6구간 레이저 커튼. F = 136.
+  - 유저 장애물 구역은 1구간뿐이라 두 코스에서 검증 결과가 같다.
+- 새 맵 요소(운동학 바디): `pendulum`(회전축에서 매달린 막대, 각도 = amp·sin), `slider`(기울어진 발판이 좌우로), `disc`(일정 속도로 도는 원판).
+  `Sim.moverPose(el, t)`가 자세를 정하고, `Game._moveKinematics()`가 다음 스텝 자세에 정확히 닿도록 속도를 준다(오차 누적 없음). 대기실 그림도 같은 함수를 쓴다.
+- 타이머는 코스별: 짧은 코스 sudden 45 / rush 45 / final 75 (예전과 같음), 긴 코스 sudden 45 / rush 90 / final 120.
+  `sudden` = 유저 장애물 전부 파괴(이벤트에 `broke`, `busy` — busy는 구역에 이름이 남아 있었는지), `rush` = 중력 1.6배.
+- 벽 밖으로 빠져나간 이름은 안으로 되돌린다(unstick level 8). `Sim.stageAt(map, y)`.
+- **맵 설계 규칙(구슬이 아니라 최대 4.6m 막대라서)**: 통로·틈 6m 이상, 경사판 25° 이상, 움직이는 부품은 벽에서 6m 이상.
+  **경사판 꼭대기 구석에 앞 경사판에서 날아온 이름이 떨어지면, 반대로 미끄러지려는 이름과 맞부딪혀 쌓인다(역류).**
+  처음 지그재그(20°, 3단)에서 이름당 17.7초 체류 + 순간이동 37% → 27° 2단 + 구석을 50° 모서리판으로 메워 6.5초, 4.5%.
+  맵을 바꾸면 끼임 위치를 꼭 확인한다(구조물별로 unstick 위치를 모으는 스크립트를 만들어 쓰면 빠르다).
+
+### 화면 (render.js, host.js)
+- 구간별 테마(`Render.THEMES`: 바탕 그라디언트 + 네온 색), 구간 경계 점선과 큰 구간 제목, 벽·경사판은 구간 네온 빛 + 크롬 심, 핀은 금속 구 스프라이트.
+- 대기실(호스트·폰): 긴 코스는 1구간 아래를 지그재그 절단선으로 자르고 결승선 띠를 바로 붙여 보여준다(`Render.LOBBY`, `cutText`).
+- 카메라(진행 중, '따라가기'): 보드 폭을 꽉 채우고 **가장 많이 모인 무리**를 따라간다. 지금 보는 무리를 유지하다가 다른 곳에 3명 이상 더 모이면 넘어간다.
+  남은 이름이 셋 이하로 모이면 확대. '전체 보기'는 남은 이름 전부가 들어오게. 미니맵을 누르거나 끌면 4초 동안 그쪽을 본다.
+- **결승선 카메라**: 긴 코스에서 본 화면에 결승선이 안 보이면 아래 24% 띠에 결승선 근처를 따로 그린다(0.4초 유지될 때만 전환). 본 화면은 띠에 가리는 만큼 내려서 무리가 가운데 오게.
+- 미니맵(오른쪽 88px 세로 띠): 코스 정적 부분은 한 번 그려 두고 이름 점·카메라 창만 매 프레임.
+- 이름 꼬리(최근 9점), 범퍼 불꽃, 확정 때 결승선 고리, **당첨 칸**(가장 흔한 칸이 아닌 칸, `Render.specialLabels`)에 들어가면 앰버 배너 + 색종이 + 화면 흔들림 + 팡파르. 당첨 칸 이름은 결승선에서 앰버로 표시.
+- 구간 배너는 화면이 보고 있는 구간 기준. 오른쪽 패널: 시계, 지금 앞서가는 이름 5명(4Hz), 결과(이 목록만 스크롤), 1배속/2배속.
+- 에셋(선택): `assets/manifest.json`의 `images`에 파일 이름이 있으면 `Render.Assets`가 불러서 보드 옆(`side`)과 구간 바닥(`stage1`~`6`)에 쓴다. 없으면 코드로 그린다. 프롬프트는 `assets/README.md`.
+
+### 폰
+- lobby·welcome·start 메시지에 `course`. 폰은 같은 `Sim.buildMap(course)`로 검증·그리기.
+- 진행 중 호스트가 1초마다 `{t:'prog', p(0~1 진행도), r(지금 순위), s(구간), n(전체)}`를 보낸다 → "큰 화면을 보세요" 아래 순위 카드(진행 막대 + 구간 이름). 위치 스트리밍은 여전히 안 한다.
+- 도구 주의: 파일을 쓸 때 정규식 안에 역슬래시-u-200b 같은 유니코드 이스케이프를 쓰면 실제 보이지 않는 문자로 바뀌어 문법 오류가 난 적이 있다(이 문서도 같은 일을 겪음). 문자 범위는 `codePointAt` 비교로 쓴다.
 
 ---
 
@@ -221,14 +270,15 @@ new Sim.Game({ seed, map, labels:[], names:[{id, polys, w, h, x}], obstacles:[{i
 ```
 {t:'welcome', id, name|null, color, x, ready, phase('lobby'|'running'|'done'), obsPer, result|null, code, inGame}
 {t:'name-ok', name, color} | {t:'name-bad', reason}
-{t:'lobby', players:[[id, name, color, x, w, fontM, flags, nObs]], obsPer, obstacles?:[[id, kind, x, y, a]], labels?:[...]}
+{t:'lobby', players:[[id, name, color, x, w, fontM, flags, nObs]], obsPer, course, obstacles?:[[id, kind, x, y, a]], labels?:[...]}
   - flags: 1 준비, 2 온라인, 4 폰 없음. x는 각자 고른 출발 x(호스트가 clamp). 쌓인 위치(y, 옆으로 비킨 x)는
     폰이 같은 순서로 Sim.layoutStart를 돌려 직접 계산한다.
   - obstacles·labels는 바뀌었을 때만 넣는다(연결마다 obsRev·labRev 기억). 장애물 소유자는 id 앞부분('p3:o1' → 'p3').
   - labels는 블라인드면 전부 '?'. 숫자는 x·y 0.01, 각도 0.001로 반올림(검증한 값 그대로 보냄).
   - 배열인 이유: PeerJS json 채널의 16300바이트 한도 (위 "30명 검증" 참고).
 {t:'obs-ok', id, op} | {t:'obs-bad', id, reason}     (id는 폰의 로컬 id)
-{t:'start'}  {t:'mine', label, seg, order}  {t:'end', results:[{name,color,label}]}
+{t:'start', course}  {t:'mine', label, seg, order}  {t:'end', results:[{name,color,label}]}
+{t:'prog', p, r, s, n}   (진행 중 1초마다: 진행도 0~1, 지금 순위, 구간 번호, 전체 인원)
 {t:'lobby-again'}  {t:'kicked'}  {t:'full'}  {t:'hb'}
 ```
 폰 → 호스트
@@ -341,14 +391,14 @@ new Sim.Game({ seed, map, labels:[], names:[{id, polys, w, h, x}], obstacles:[{i
 
 ```bash
 npm install            # devDependencies: planck, peerjs, qrcode-generator, playwright
-npm test               # 헤드리스 200판: fails=0이어야 함. sim.js 수정 후 필수 (fixtures가 있으면 실제 글자 모양 사용)
-node test/headless.js 400 7 --players 30 --extra 0 --obs 2 [--mode block] [--crowd] [--synth]
-npm run stress         # 30명 × 2000판을 CPU 코어 수만큼 병렬로 (test/stress.js)
+npm test               # 헤드리스 짧은 코스 200판 + 긴 코스 60판: fails=0이어야 함. sim.js 수정 후 필수 (fixtures가 있으면 실제 글자 모양)
+node test/headless.js 400 7 --players 30 --extra 0 --obs 2 [--course long|short] [--mode block] [--crowd] [--synth]
+npm run stress         # 긴 코스 30명 × 2000판을 CPU 코어 수만큼 병렬로 (stress:short는 짧은 코스)
 npm run serve          # http://localhost:8080 (node test/server.js)
 npm run e2e            # 호스트 1 + 폰 30, 가짜 PeerJS, 두 판 (+ --resilience: 호스트 새로고침·폰 끊김·강퇴·폰 없는 사람)
 npm run e2e:real       # 진짜 PeerJS 서버 + WebRTC, 폰마다 별도 컨텍스트. --url <배포 주소>면 배포된 사이트와 실제 CDN으로
 node test/host-perf.js 30 2        # 폰 없는 사람 30명으로 호스트 fps 측정 (단독으로 돌릴 것)
-node test/browser-batch.js 160     # 브라우저 안에서 30명 판을 대량으로 (실제 폰트·브라우저 엔진)
+node test/browser-batch.js 160 --course long   # 브라우저 안에서 30명 판을 대량으로 (실제 폰트·브라우저 엔진)
 npm run glyphs         # 실제 글자 모양 다시 뽑기 → test/fixtures/names.json
 ```
 - Playwright는 설치된 Edge(`channel: 'msedge'`)를 쓴다. 없으면 기본 Chromium(`npx playwright install chromium`). `BROWSER_CHANNEL`로 바꿀 수 있다.

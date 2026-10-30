@@ -57,14 +57,35 @@
     };
   }
 
+  // ---------- 코스 ----------
+  // short: 처음 만든 31m 코스(약 20초). long: 같은 1구간 아래로 다섯 구간을 더 이은 긴 코스.
+  // 1구간(유저 장애물 구역)은 두 코스가 똑같아서, 폰의 장애물 검증·화면은 코스와 상관없다.
+  // timers — sudden: 유저 장애물 전부 파괴(사용자 요구사항 45초), rush: 중력 1.6배, final: 남은 이름 유령 낙하.
+  const COURSES = {
+    short: { id: 'short', label: '짧은 코스', finishY: 31, timers: { sudden: 45, rush: 45, final: 75 } },
+    long: { id: 'long', label: '긴 코스', finishY: 136, timers: { sudden: 45, rush: 90, final: 120 } },
+  };
+  const STAGES_LONG = [
+    { name: '핀볼 숲', y0: -16, y1: 31.5 },
+    { name: '지그재그 슬로프', y0: 31.5, y1: 65.5 },
+    { name: '범퍼 정원', y0: 65.5, y1: 88 },
+    { name: '시계추 골짜기', y0: 88, y1: 110 },
+    { name: '회전 원판', y0: 110, y1: 123.5 },
+    { name: '레이저 커튼', y0: 123.5, y1: Infinity },
+  ];
+
   // ---------- 맵 ----------
-  function buildMap() {
-    const W = C.W, F = C.FINISH_Y, els = [];
+  function buildMap(course) {
+    const id = COURSES[course] ? course : 'short';
+    const W = C.W, F = COURSES[id].finishY, els = [];
     const wall = (a, b, r) => els.push({ kind: 'wall', a, b, r: r || 0.3 });
     const pin = (x, y, r) => els.push({ kind: 'pin', c: [x, y], r: r || 0.3 });
     const bumper = (x, y, r) => els.push({ kind: 'bumper', c: [x, y], r });
     const mill = (x, y, len, speed) => els.push({ kind: 'mill', c: [x, y], len, thick: 0.36, speed });
-    const defl = (a, b) => els.push({ kind: 'deflector', a, b, r: 0.22 });
+    const defl = (a, b, r) => els.push({ kind: 'deflector', a, b, r: r || 0.22 });
+    const pendulum = (x, y, len, amp, period, phase) => els.push({ kind: 'pendulum', c: [x, y], len, thick: 0.55, amp, period, phase: phase || 0 });
+    const slider = (x, y, len, tilt, amp, period, phase) => els.push({ kind: 'slider', c: [x, y], len, thick: 0.45, tilt, amp, period, phase: phase || 0 });
+    const disc = (x, y, r, speed) => els.push({ kind: 'disc', c: [x, y], r, speed });
 
     wall([0, -16], [0, F + 6]);
     wall([W, -16], [W, F + 6]);
@@ -92,7 +113,59 @@
     mill(15, 26.4, 3.3, 1.15);
     pin(5.5, 27.0);
     pin(24.5, 27.0);
-    return { W, F, els };
+
+    if (id === 'long') {
+      // 이름은 최대 4.6m 길이의 막대라서 구슬보다 길이 넓어야 한다: 통로·틈은 6m 이상, 경사는 20° 안팎,
+      // 움직이는 부품은 벽에서 6m 이상 떨어뜨려(벽에 눌려 끼지 않게) 둔다.
+      // 2구간: 지그재그 슬로프 — 27° 긴 경사판 둘. 끝에는 9.5m 틈.
+      // 앞 경사판에서 날아온 이름이 벽에 맞고 다음 경사판 꼭대기 구석에 쌓이면 미끄러지는 이름과 맞부딪혀 막힌다
+      // → 구석을 가파른 모서리판(50°)으로 메워서, 벽에 맞고 떨어진 이름도 미끄러지는 방향으로 출발하게 한다.
+      defl([0, 34.5], [20.5, 44.9], 0.3);
+      defl([W, 49.5], [W - 20.5, 59.9], 0.3);
+      defl([W, 47.3], [W - 2.9, 50.95], 0.3);
+      // 3구간: 범퍼 정원 — 엇갈린 범퍼 네 줄, 벽 쪽 턱
+      [7, 15, 23].forEach(x => bumper(x, 69, 0.9));
+      [11, 19].forEach(x => bumper(x, 74.5, 0.9));
+      [7, 15, 23].forEach(x => bumper(x, 80, 0.9));
+      [11, 19].forEach(x => bumper(x, 85.5, 0.9));
+      defl([0, 71.5], [2.6, 73.0]);
+      defl([W, 71.5], [W - 2.6, 73.0]);
+      defl([0, 82.5], [2.6, 84.0]);
+      defl([W, 82.5], [W - 2.6, 84.0]);
+      // 4구간: 시계추 골짜기 — 가운데 큰 시계추, 아래로 좌우로 오가는 기울어진 발판 둘
+      pin(15, 89.5, 0.6);
+      pendulum(15, 89.5, 9.0, 0.62, 3.6, 0);
+      slider(15, 103, 6.5, 0.26, 5.5, 4.2, 0);
+      slider(15, 107.5, 6.5, -0.26, 5.5, 4.2, Math.PI);
+      // 5구간: 회전 원판 — 반대로 도는 원판 둘 + 가운데 범퍼
+      disc(8.5, 113.5, 2.4, 2.4);
+      disc(W - 8.5, 113.5, 2.4, -2.4);
+      bumper(15, 120, 1.1);
+      defl([0, 116.5], [2.8, 118.0]);
+      defl([W, 116.5], [W - 2.8, 118.0]);
+      // 6구간: 레이저 커튼 — 벽에서 밀어내는 경사판 + 마지막 핀 (1구간 아래쪽과 같은 배치)
+      defl([0, 124.5], [4.8, 126.7]);
+      defl([W, 124.5], [W - 4.8, 126.7]);
+      [10.5, 19.5].forEach(x => pin(x, 127.5));
+      pin(15, 128.7);
+      [5.5, 24.5].forEach(x => pin(x, 130.5));
+      [9, 15, 21].forEach(x => pin(x, 133.0));
+    }
+    const stages = id === 'long' ? STAGES_LONG.map(s => Object.assign({}, s, { y1: Math.min(s.y1, F + 6) }))
+      : [{ name: '핀볼 숲', y0: -16, y1: F + 6 }];
+    return { id, W, F, els, stages, timers: COURSES[id].timers, view: { x0: -0.6, y0: -3.2, x1: W + 0.6, y1: F + 3 } };
+  }
+
+  // 움직이는 맵 요소의 시각 t 자세 (물리와 대기실 그림이 같이 쓴다, 결정적)
+  function moverPose(el, t) {
+    const w = el.period ? 2 * Math.PI / el.period : 0;
+    if (el.kind === 'pendulum') return { x: el.c[0], y: el.c[1], a: el.amp * Math.sin(w * t + el.phase) };
+    if (el.kind === 'slider') return { x: el.c[0] + el.amp * Math.sin(w * t + el.phase), y: el.c[1], a: el.tilt };
+    return { x: el.c[0], y: el.c[1], a: (el.speed || 0) * t };
+  }
+  function stageAt(map, y) {
+    const i = map.stages.findIndex(s => y < s.y1);
+    return i < 0 ? map.stages.length - 1 : i;
   }
 
   // ---------- 기하 ----------
@@ -109,8 +182,10 @@
     return Math.min(segPt(a, b, c), segPt(a, b, d), segPt(c, d, a), segPt(c, d, b));
   }
   function geomOf(el) {
-    if (el.kind === 'pin' || el.kind === 'bumper') return { t: 'cir', c: el.c, r: el.r };
+    if (el.kind === 'pin' || el.kind === 'bumper' || el.kind === 'disc') return { t: 'cir', c: el.c, r: el.r };
     if (el.kind === 'mill') return { t: 'cir', c: el.c, r: el.len + el.thick };
+    if (el.kind === 'pendulum') return { t: 'cir', c: el.c, r: el.len + el.thick };
+    if (el.kind === 'slider') return { t: 'cap', a: [el.c[0] - el.amp, el.c[1]], b: [el.c[0] + el.amp, el.c[1]], r: el.len / 2 + el.thick };
     return { t: 'cap', a: el.a, b: el.b, r: el.r };
   }
   function obsGeom(o) {
@@ -290,8 +365,11 @@
       this.events = [];
       this.over = false;
       this.world = new planck.World({ gravity: { x: 0, y: C.GRAVITY } });
+      this.F = this.map.F || C.FINISH_Y;
+      this.timers = this.map.timers || { sudden: C.T_SUDDEN, rush: C.T_SUDDEN, final: C.T_FINAL };
       this.segments = new Segments(opts.labels, C.W);
       this.mills = [];
+      this.movers = [];   // 시계추·발판·원판 (운동학 바디)
       this._buildStatics();
       this.obs = new Map();
       (opts.obstacles || []).forEach(o => this._addObstacle(o));
@@ -303,6 +381,7 @@
       this.hits = [];
       this.nextSample = 0;
       this.suddenDone = false;
+      this.rushDone = false;
       this.finalDone = false;
       this.world.on('begin-contact', c => this._onBegin(c));
       this.world.on('pre-solve', c => this._onPreSolve(c));
@@ -327,6 +406,19 @@
           b.createFixture(new planck.Box(el.thick / 2, el.len), { friction: 0.2, restitution: 0.35, userData: { type: 'mill' } });
           b.setAngularVelocity(el.speed);
           this.mills.push({ el, body: b });
+        } else if (el.kind === 'pendulum' || el.kind === 'slider' || el.kind === 'disc') {
+          const p = moverPose(el, 0);
+          const b = this.world.createBody({ type: 'kinematic', position: { x: p.x, y: p.y }, angle: p.a });
+          if (el.kind === 'pendulum') {
+            // 회전축(바디 원점)에서 아래로 매달린 막대
+            b.createFixture(new planck.Box(el.thick / 2, el.len / 2, { x: 0, y: el.len / 2 }, 0), { friction: 0.2, restitution: 0.35, userData: { type: 'mover' } });
+          } else if (el.kind === 'slider') {
+            b.createFixture(new planck.Box(el.len / 2, el.thick / 2), { friction: 0.25, restitution: 0.2, userData: { type: 'mover' } });
+          } else {
+            b.createFixture(new planck.Circle(el.r), { friction: 0.6, restitution: 0.25, userData: { type: 'disc' } });
+            b.setAngularVelocity(el.speed);
+          }
+          this.movers.push({ el, body: b });
         }
       }
     }
@@ -476,8 +568,20 @@
       this.hits.length = 0;
     }
 
+    // 다음 스텝 시각의 자세에 정확히 닿도록 속도를 준다 (오차가 쌓이지 않음)
+    _moveKinematics() {
+      if (!this.movers.length) return;
+      const t1 = this.t + C.DT;
+      for (const m of this.movers) {
+        if (m.el.kind === 'disc') continue;   // 원판은 일정한 각속도
+        const p = moverPose(m.el, t1), b = m.body;
+        if (m.el.kind === 'pendulum') b.setAngularVelocity((p.a - b.getAngle()) / C.DT);
+        else { const q = b.getPosition(); b.setLinearVelocity({ x: (p.x - q.x) / C.DT, y: (p.y - q.y) / C.DT }); }
+      }
+    }
+
     _checkFinish() {
-      const F = C.FINISH_Y, crossings = [];
+      const F = this.F, crossings = [];
       for (const n of this.names.values()) {
         if (n.done) continue;
         const c = n.body.getWorldCenter();
@@ -515,6 +619,15 @@
       for (const n of this.names.values()) {
         if (n.done || this._phasing(n)) continue;
         const c = n.body.getWorldCenter();
+        if (c.x < -0.5 || c.x > C.W + 0.5) {
+          const b = n.body, p = b.getPosition(), half = Math.min(C.W / 2 - 0.5, n.w / 2 + 0.6);
+          const nx = Math.max(half, Math.min(C.W - half, c.x));
+          b.setTransform({ x: p.x + nx - c.x, y: p.y }, b.getAngle());
+          b.setLinearVelocity({ x: 0, y: Math.max(1, b.getLinearVelocity().y) });
+          n.prevX = nx;
+          this.events.push({ t: 'unstick', id: n.id, level: 8, x: nx, y: c.y });
+          continue;
+        }
         // 순환 함정(풍차에 실려 돌기, 범퍼 사이 왕복 등): 7초 동안 더 내려가지 못하면 잠깐 유령으로 빠져나감
         if (c.y > n.bestY + 0.8) { n.bestY = c.y; n.bestYAt = this.t; }
         else if (this.t - n.bestYAt > 7) { this._unstall(n); n.bestYAt = this.t; n.hist.length = 0; continue; }
@@ -590,13 +703,21 @@
     }
 
     _timeRules() {
-      if (!this.suddenDone && this.t >= C.T_SUDDEN) {
+      const tm = this.timers;
+      if (!this.suddenDone && this.t >= tm.sudden) {
         this.suddenDone = true;
-        for (const o of this.obs.values()) if (o.alive) this._breakObs(o);
-        this.world.setGravity({ x: 0, y: C.GRAVITY * 1.6 });
-        this.events.push({ t: 'sudden' });
+        let broke = 0, busy = false;
+        for (const o of this.obs.values()) if (o.alive) { this._breakObs(o); broke++; }
+        // 긴 코스에서는 보통 다들 이미 장애물 구역을 지나갔다 → 화면 알림은 구역에 이름이 남아 있을 때만
+        for (const n of this.names.values()) if (!n.done && n.body && n.body.getWorldCenter().y < C.ZONE.y1 + 2) busy = true;
+        this.events.push({ t: 'sudden', broke, busy });
       }
-      if (!this.finalDone && this.t >= C.T_FINAL) {
+      if (!this.rushDone && this.t >= tm.rush) {
+        this.rushDone = true;
+        this.world.setGravity({ x: 0, y: C.GRAVITY * 1.6 });
+        this.events.push({ t: 'rush' });
+      }
+      if (!this.finalDone && this.t >= tm.final) {
         this.finalDone = true;
         for (const n of this.names.values()) {
           if (n.done) continue;
@@ -610,6 +731,7 @@
 
     step() {
       if (this.over) return;
+      this._moveKinematics();
       this.world.step(C.DT, 8, 3);
       this.t += C.DT;
       this._processHits();
@@ -625,7 +747,7 @@
   }
 
   return {
-    C, OBS, makeRng, buildMap, validateObstacle, normAngle, obsGeom, layoutStart, clampDropX,
+    C, OBS, COURSES, makeRng, buildMap, moverPose, stageAt, validateObstacle, normAngle, obsGeom, layoutStart, clampDropX,
     convexHull, simplifyConvex, cleanPoly, polyArea, Segments, Game,
   };
 });

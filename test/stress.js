@@ -42,9 +42,10 @@ Promise.all(jobs).then(parts => {
   // 0건일 때 95% 신뢰 상한 ≈ 3/N (rule of three)
   const upper = k => k === 0 ? (100 * 3 / N).toFixed(2) + '% 미만 (95% 신뢰)' : '';
   const sum = {
-    games: N, settings: { shapes: parts[0].shapes, players: parts[0].players, obsPer: parts[0].obsPer, mode: parts[0].mode },
+    games: N, settings: { course: parts[0].course, shapes: parts[0].shapes, players: parts[0].players, obsPer: parts[0].obsPer, mode: parts[0].mode },
     fails: fails.length, failRate: pc(fails.length, N), failUpper: upper(fails.length), failList: fails.slice(0, 20),
     sudden45: count(g => g.sudden), suddenRate: pc(count(g => g.sudden), N),
+    rush: count(g => g.rush), rushRate: pc(count(g => g.rush), N),
     final75: count(g => g.final), finalRate: pc(count(g => g.final), N),
     teleportGames: count(g => g.teleport), teleportRate: pc(count(g => g.teleport), N),
     stallGames: count(g => g.stall > 0), stallRate: pc(count(g => g.stall > 0), N),

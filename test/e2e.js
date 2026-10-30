@@ -2,7 +2,7 @@
 //   node test/e2e.js                 가짜 PeerJS(BroadcastChannel), 한 브라우저 컨텍스트
 //   node test/e2e.js --real          진짜 PeerJS 클라우드 서버 + WebRTC, 폰마다 별도 컨텍스트(실제 폰처럼 저장소 분리)
 //   node test/e2e.js --real --url https://아이디.github.io/저장소/   배포된 사이트로
-//   옵션: --phones 30  --obs 2  --games 2  --labels "커피*1,꽝*29"
+//   옵션: --phones 30  --obs 2  --games 2  --course long|short  --labels "커피*1,꽝*29"
 // 이름 → 출발 위치(한 곳에 몰기 포함) → 장애물(거절 사유 포함) → 준비 → 31번째 입장 거절 → 시작 → 전원 결과 → 다시 하기
 const fs = require('fs');
 const path = require('path');
@@ -16,6 +16,7 @@ const URL_ARG = opt('url', null);
 const N = +opt('phones', 30);
 const OBS = +opt('obs', 2);
 const GAMES = +opt('games', 2);
+const COURSE = opt('course', 'long');
 const OUT = path.join(__dirname, 'out', REAL ? 'real' : 'fake');
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -29,7 +30,7 @@ const LABELS = opt('labels', null) || '커피 쏘기\n간식 쏘기\n설거지\n
 const log = (...a) => console.log(`[${((Date.now() - T0) / 1000).toFixed(1)}s]`, ...a);
 const T0 = Date.now();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const report = { mode: REAL ? 'real-peerjs' : 'fake-peerjs', phones: N, obsPer: OBS, games: [], checks: [], errors: [] };
+const report = { mode: REAL ? 'real-peerjs' : 'fake-peerjs', course: COURSE, phones: N, obsPer: OBS, games: [], checks: [], errors: [] };
 function check(name, ok, detail) {
   report.checks.push({ name, ok: !!ok, detail });
   log(ok ? 'PASS' : 'FAIL', name, detail === undefined ? '' : JSON.stringify(detail));
@@ -61,6 +62,7 @@ async function inBatches(items, size, fn) {
   for (let i = cur; i < OBS; i++) await host.click('#obsPlus');
   for (let i = cur; i > OBS; i--) await host.click('#obsMinus');
   check('칸 이름 파싱', (await host.textContent('#labelsHint')).trim() === '30칸', await host.textContent('#labelsHint'));
+  await host.click(`#coursePick [data-course="${COURSE}"]`);
   await host.screenshot({ path: path.join(OUT, '01-host-setup.png') });
   await host.click('#openRoom');
   await host.waitForFunction(() => document.querySelector('#net').classList.contains('ok'), null, { timeout: 30000 });
@@ -116,6 +118,8 @@ async function inBatches(items, size, fn) {
   });
   await host.waitForFunction(n => PLB.st.players.filter(p => p.name).length === n, N, { timeout: 30000 });
   check(`${N}명 이름 등록`, true);
+  const courses = await Promise.all(phones.map(pg => pg.evaluate(() => PLB.st.map.id)));
+  check(`폰 ${N}대 모두 같은 코스(${COURSE})`, courses.every(c => c === COURSE), [...new Set(courses)]);
 
   // 31번째는 거절
   if (N >= 30) {
@@ -301,7 +305,8 @@ async function inBatches(items, size, fn) {
     });
     await host.mouse.move(drag[0], drag[1]);
     await host.mouse.down();
-    await host.mouse.move(drag[0] + 4 * drag[2], drag[1], { steps: 6 });
+    const dir = localX0 < 15 ? 1 : -1;   // 벽 쪽으로 끌면 막히므로 가운데 쪽으로
+    await host.mouse.move(drag[0] + dir * 4 * drag[2], drag[1], { steps: 6 });
     await host.mouse.up();
     const localX1 = await host.evaluate(() => PLB.st.players.find(p => p.local).x);
     check('폰 없는 사람 추가 + 보드에서 끌어 위치 변경', Math.abs(localX1 - localX0) > 2, { localX0, localX1 });
@@ -333,6 +338,16 @@ async function inBatches(items, size, fn) {
     check(`[${gi + 1}판] 폰 전원 진행 화면`, true);
     await host.waitForFunction(() => PLB.st.phase === 'running', null, { timeout: 20000 });
     await sleep(5000);
+    const race = await Promise.all(phones.map(pg => pg.evaluate(() => ({
+      shown: !document.getElementById('pRace').classList.contains('hidden'),
+      rank: document.getElementById('pRunRank').textContent, done: !document.getElementById('pDone').classList.contains('hidden'),
+    }))));
+    const racing = race.filter(r => !r.done);
+    check(`[${gi + 1}판] 폰에 실시간 순위 표시`, racing.length > 0 && racing.every(r => r.shown && /^\d+등$/.test(r.rank)), { racing: racing.length, sample: racing.slice(0, 3) });
+    const live = await host.evaluate(() => ({ shown: !document.getElementById('liveWrap').classList.contains('hidden'), rows: document.querySelectorAll('#liveRank li').length }));
+    check(`[${gi + 1}판] 호스트 실시간 순위`, live.shown && live.rows > 0, live);
+    const racer = phones[race.findIndex(r => !r.done && r.shown)];
+    if (racer) { await racer.bringToFront(); await racer.screenshot({ path: path.join(OUT, `07b-phone-race-${gi + 1}.png`) }); await host.bringToFront(); }
     await host.screenshot({ path: path.join(OUT, `07-host-running-${gi + 1}.png`) });
     await host.waitForFunction(() => PLB.st.phase === 'done', null, { timeout: 240000, polling: 500 });
     const wall = (Date.now() - wall0) / 1000;
