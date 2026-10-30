@@ -394,34 +394,33 @@
       });
     }
 
-    // 3. 설치 구역
-    if (sc.showZone) {
-      const x0 = T.x(C.CLEAR_WALL), x1 = T.x(W - C.CLEAR_WALL), y0 = T.y(C.ZONE.y0), y1 = T.y(C.ZONE.y1);
-      ctx.fillStyle = 'rgba(255,181,71,0.05)';
-      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    // 3. 장애물을 놓을 수 있는 곳: 출발선 아래 이 점선부터 결승선 바로 위까지 길 위 어디든
+    if (sc.showZone && vis(C.ZONE.y0 - 1, C.ZONE.y0 + 2)) {
+      const open = Sim.openAt(map, C.ZONE.y0)[0], y = T.y(C.ZONE.y0);
       ctx.setLineDash([Math.max(3, 0.35 * k), Math.max(3, 0.3 * k)]);
       ctx.strokeStyle = 'rgba(255,181,71,0.75)';
       ctx.lineWidth = Math.max(1, 0.06 * k);
-      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.beginPath(); ctx.moveTo(T.x(open[0] + 0.4), y); ctx.lineTo(T.x(open[1] - 0.4), y); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(255,181,71,0.85)';
+      ctx.fillStyle = 'rgba(255,181,71,0.9)';
       ctx.font = `${Math.max(10, 0.55 * k)}px "IBM Plex Sans KR", sans-serif`;
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText('장애물 설치 구역', x0 + 0.25 * k, y0 + 0.2 * k);
+      ctx.fillText('이 선 아래 어디든 장애물을 놓을 수 있어요', T.x(open[0] + 0.6), y + 0.2 * k);
     }
 
-    // 금지 구역 후광 (폰 장애물 편집 중)
+    // 못 놓는 곳 (폰 장애물 편집 중): 움직이는 장치가 휩쓰는 범위. 벽·핀 같은 고정 구조물은 겹치지만 않으면 바로 옆도 된다
     if (sc.halo) {
-      ctx.fillStyle = 'rgba(255,107,122,0.11)';
-      ctx.strokeStyle = 'rgba(255,107,122,0.11)';
+      ctx.fillStyle = 'rgba(255,107,122,0.13)';
+      ctx.strokeStyle = 'rgba(255,107,122,0.13)';
       ctx.lineCap = 'round';
       for (const el of map.els) {
-        if (el.kind === 'wall' || el.kind === 'rim' || !elVisible(el, vy0, vy1)) continue;
-        if (el.a) {
-          ctx.lineWidth = (el.r + C.CLEAR_MAP) * 2 * k;
-          ctx.beginPath(); ctx.moveTo(T.x(el.a[0]), T.y(el.a[1])); ctx.lineTo(T.x(el.b[0]), T.y(el.b[1])); ctx.stroke();
+        if ((el.kind !== 'mill' && el.kind !== 'pendulum' && el.kind !== 'slider' && el.kind !== 'disc') || !elVisible(el, vy0, vy1)) continue;
+        if (el.kind === 'slider') {
+          // sim.js geomOf와 같은 모양: 오가는 길 위 캡슐 (반지름 = 발판 반 길이 + 두께)
+          ctx.lineWidth = (el.len / 2 + el.thick + C.CLEAR_MAP) * 2 * k;
+          ctx.beginPath(); ctx.moveTo(T.x(el.c[0] - el.amp), T.y(el.c[1])); ctx.lineTo(T.x(el.c[0] + el.amp), T.y(el.c[1])); ctx.stroke();
         } else {
-          const r = el.kind === 'mill' || el.kind === 'pendulum' ? el.len + el.thick : el.r || 1;
+          const r = el.kind === 'disc' ? el.r : el.len + el.thick;
           ctx.beginPath(); ctx.arc(T.x(el.c[0]), T.y(el.c[1]), (r + C.CLEAR_MAP) * k, 0, TAU); ctx.fill();
         }
       }
@@ -1038,27 +1037,33 @@
   // ---------- 미니맵 ----------
   // 코스 전체를 세로 띠로. 정적인 부분은 한 번 그려 두고, 이름 점과 카메라 창만 매 프레임 그린다
   const mm = { key: '', cv: null };
+  // rect.stretch면 가로·세로 배율을 따로(폰의 코스 띠: 좁고 길게 늘려 끌기 쉽게)
   function minimapGeom(map, rect) {
-    const y0 = -6, y1 = map.F + C.LABEL_BAND + 1, s = Math.min(rect.h / (y1 - y0), rect.w / (C.W + 2));
+    const y0 = -6, y1 = map.F + C.LABEL_BAND + 1;
+    if (rect.stretch) {
+      const sx = rect.w / (C.W + 2), sy = rect.h / (y1 - y0), w = C.W * sx;
+      return { s: Math.min(sx, sy), sx, sy, x: rect.x + (rect.w - w) / 2, top: rect.y, y0, y1, w, h: rect.h, toY: py => y0 + (py - rect.y) / sy };
+    }
+    const s = Math.min(rect.h / (y1 - y0), rect.w / (C.W + 2));
     const w = C.W * s, x = rect.x + (rect.w - w) / 2, top = rect.y + (rect.h - (y1 - y0) * s) / 2;
-    return { s, x, top, y0, y1, w, h: (y1 - y0) * s, toY: py => y0 + (py - top) / s };
+    return { s, sx: s, sy: s, x, top, y0, y1, w, h: (y1 - y0) * s, toY: py => y0 + (py - top) / s };
   }
   function drawMinimap(ctx, rect, info) {
     const map = info.map, g = minimapGeom(map, rect), dpr = Math.min(2, root.devicePixelRatio || 1);
-    const key = [map.id, Math.round(rect.w), Math.round(rect.h), dpr].join('|');
+    const key = [map.id, Math.round(rect.w), Math.round(rect.h), dpr, rect.stretch ? 1 : 0].join('|');
     if (mm.key !== key) {
       mm.key = key;
       const cv = mm.cv = canvasOf((g.w + 8) * dpr, (g.h + 8) * dpr);
       const c = cv.getContext('2d');
       c.scale(dpr, dpr); c.translate(4, 4);
-      const X = x => x * g.s, Y = y => (y - g.y0) * g.s;
+      const X = x => x * g.sx, Y = y => (y - g.y0) * g.sy;
       c.fillStyle = 'rgba(6,4,13,0.86)';
       roundRect(c, -4, -4, g.w + 8, g.h + 8, 6); c.fill();
       map.stages.forEach((s, i) => {
         const a = Math.max(s.y0, g.y0), b = Math.min(s.y1, map.F);
         if (b <= a) return;
         c.fillStyle = themeOf(map.stages.length > 1 ? i : 0).bg2;
-        c.fillRect(0, Y(a), g.w, (b - a) * g.s);
+        c.fillRect(0, Y(a), g.w, (b - a) * g.sy);
         if (i > 0) { c.fillStyle = alpha(themeOf(i).glow, 0.6); c.fillRect(0, Y(s.y0), g.w, 1); }
       });
       if (map.path) {
@@ -1097,13 +1102,13 @@
       }
     }
     ctx.drawImage(mm.cv, g.x - 4, g.top - 4, g.w + 8, g.h + 8);
-    const X = x => g.x + x * g.s, Y = y => g.top + (y - g.y0) * g.s;
+    const X = x => g.x + x * g.sx, Y = y => g.top + (y - g.y0) * g.sy;
     if (info.view) {
       const a = Math.max(info.view.y0, g.y0), b = Math.min(info.view.y1, g.y1);
       ctx.fillStyle = 'rgba(243,238,255,0.08)';
-      ctx.fillRect(g.x - 2, Y(a), g.w + 4, Math.max(2, (b - a) * g.s));
+      ctx.fillRect(g.x - 2, Y(a), g.w + 4, Math.max(2, (b - a) * g.sy));
       ctx.strokeStyle = 'rgba(243,238,255,0.7)'; ctx.lineWidth = 1;
-      ctx.strokeRect(g.x - 2, Y(a), g.w + 4, Math.max(2, (b - a) * g.s));
+      ctx.strokeRect(g.x - 2, Y(a), g.w + 4, Math.max(2, (b - a) * g.sy));
     }
     for (const n of info.names || []) {
       const r = n.lead ? 3.4 : 2.4;

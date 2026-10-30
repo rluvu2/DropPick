@@ -22,6 +22,7 @@
     ready: false, readyAt: 0, inGame: false, result: null,
     tab: 'drop', kind: 'block', edit: null, editOk: false, pending: null, lidSeq: 0,
     T: null, dirty: true, ptr: null,
+    obsTop: null, lastView: null, strip: null, lastLoop: 0,   // 장애물 탭의 코스 둘러보기 (긴 코스)
   };
 
   function getCid() {
@@ -241,11 +242,13 @@
     el.className = 'status' + (kind ? ' ' + kind : '');
   }
   function defaultAngle(kind) { return kind === 'block' ? STEP : 0; }
-  // 설치 구역 가운데에서 가까운 빈자리 (없으면 null — 30명이면 보드가 20~25개쯤에서 꽉 찬다)
+  // 지금 보고 있는 화면 가운데에서 가까운 빈자리 (장애물은 맵 어디든 놓을 수 있다)
   function freeSpot(kind, a) {
-    const list = st.obstacles, tries = [];
-    for (let y = 4.5; y <= 28.5; y += 0.5) for (let x = 2; x <= 28; x += 0.5) tries.push([x, y]);
-    tries.sort((p, q) => Math.hypot(p[0] - 15, (p[1] - 17) * 1.4) - Math.hypot(q[0] - 15, (q[1] - 17) * 1.4));
+    const list = st.obstacles, tries = [], v = obsScroll() && st.lastView;
+    const cy = v ? (v.y0 + v.y1) / 2 : 17;
+    const y0 = v ? Math.max(C.ZONE.y0 + 1, v.y0 + 1) : 4.5, y1 = v ? Math.min(st.map.F - 3, v.y1 - 1) : 28.5;
+    for (let y = y0; y <= y1; y += 0.5) for (let x = 1.5; x <= 28.5; x += 0.5) tries.push([x, y]);
+    tries.sort((p, q) => Math.hypot(p[0] - 15, (p[1] - cy) * 1.4) - Math.hypot(q[0] - 15, (q[1] - cy) * 1.4));
     for (const [x, y] of tries) {
       if (Sim.validateObstacle(st.map, list, { id: '__new', kind, x, y, a }).ok) return [x, y];
     }
@@ -256,7 +259,7 @@
     const a = defaultAngle(st.kind), spot = freeSpot(st.kind, a);
     if (!spot) {
       st.edit = null;
-      setStatus(`보드에 ${KIND_LABEL[st.kind]} 놓을 빈자리가 없어요. 다른 종류를 골라보세요`, 'bad');
+      setStatus(`이 화면에는 ${KIND_LABEL[st.kind]} 놓을 빈자리가 없어요. 다른 곳으로 가 보세요`, 'bad');
       st.dirty = true;
       return;
     }
@@ -264,6 +267,7 @@
     validateEdit();
   }
   function editExisting(o) {
+    if (obsScroll()) scrollTo(o.y);   // 고른 장애물이 보이게
     st.edit = { lid: lidOf(o), kind: o.kind, x: o.x, y: o.y, a: o.a };
     st.kind = o.kind;
     renderKinds(); renderMyObs();
@@ -379,6 +383,22 @@
   }
 
   // ---------- 보드 ----------
+  // 장애물 탭 + 긴 코스: 코스 전체를 위아래로 둘러보며 놓는다. 보드는 캔버스 왼쪽, 오른쪽 띠(STRIP px)는 코스 전체.
+  // 띠를 누르거나 끌면 그 높이로 가고, 장애물을 끌다가 위·아래 끝에 닿으면 저절로 넘어간다. 짧은 코스는 한 화면에 다 들어와서 그대로
+  const STRIP = 46;
+  const obsScroll = () => st.tab === 'obs' && st.map.id !== 'short';
+  const scrollRange = H => [C.ZONE.y0 - 4, st.map.F + C.LABEL_BAND + 0.8 - H];
+  function obsView(w, h) {
+    const k = (w - STRIP) / (C.W + 1.2), H = h / k, [lo, hi] = scrollRange(H);
+    if (st.obsTop === null) st.obsTop = lo;
+    st.obsTop = Math.max(lo, Math.min(hi, st.obsTop));
+    return { x0: -0.6, x1: -0.6 + w / k, y0: st.obsTop, y1: st.obsTop + H, H };
+  }
+  function scrollTo(y) {   // 그 높이가 화면 가운데에 오게
+    const cv = $('pCanvas'), w = cv.clientWidth || 360, h = cv.clientHeight || 420;
+    st.obsTop = y - (h * (C.W + 1.2) / Math.max(1, w - STRIP)) / 2;
+    st.dirty = true;
+  }
   function view() {
     const pos = layoutPositions();
     let top = C.START_Y;
@@ -387,17 +407,20 @@
     return { x0: C.VIEW.x0, x1: C.VIEW.x1, y0: Math.min(C.VIEW.y0, top - 1.3), y1 };
   }
   function draw() {
-    const cv = $('pCanvas'), v = view();
-    const ar = `${(v.x1 - v.x0).toFixed(2)} / ${(v.y1 - v.y0).toFixed(2)}`;
+    const cv = $('pCanvas'), scroll = obsScroll();
+    let v = scroll ? null : view();
+    const ar = scroll ? '100 / 118' : `${(v.x1 - v.x0).toFixed(2)} / ${(v.y1 - v.y0).toFixed(2)}`;
     if (cv.dataset.ar !== ar) { cv.dataset.ar = ar; cv.style.aspectRatio = ar; }
     const { ctx, w, h } = Render.setupCanvas(cv);
+    if (scroll) v = st.lastView = obsView(w, h);
+    $('pStripHint').classList.toggle('hidden', st.map.id === 'short');
     const T = st.T = Render.makeT(w, h, v, 0);
     const pos = layoutPositions(), obsTab = st.tab === 'obs';
     const editingId = st.edit && st.edit.lid ? st.me.id + ':' + st.edit.lid : null;
     const colorOf = id => { const p = st.players.find(q => q.id === id); return p ? p.color : Render.COL.chrome; };
     const segW = C.W / Math.max(1, st.labels.length);
     const mine = pos[st.me.id];
-    const map = st.map, cut = map.id !== 'short';
+    const map = st.map, cut = map.id !== 'short' && !scroll;
     Render.drawScene(ctx, T, {
       map, view: v, mode: 'lobby',
       mills: map.els.filter(e => e.kind === 'mill').map(el => ({ el, angle: Math.PI / 4 })),
@@ -413,9 +436,29 @@
       ghost: obsTab && st.edit ? Object.assign({ ok: st.editOk }, st.edit) : null,
       guide: !obsTab && mine ? { x: mine.x, y: mine.y } : null,
     });
+    // 코스 띠: 코스 전체 + 지금 보는 곳 + 내 장애물(내 색)·놓으려는 것(앰버)
+    if (scroll) {
+      st.strip = { x: w - STRIP + 6, y: 6, w: STRIP - 10, h: h - 12, stretch: true };
+      const dots = myObs().map(o => ({ x: o.x, y: o.y, color: st.me.color || Render.COL.teal }));
+      if (st.edit) dots.push({ x: st.edit.x, y: st.edit.y, color: Render.COL.amber, lead: true });
+      Render.drawMinimap(ctx, st.strip, { map, view: v, names: dots });
+    } else st.strip = null;
   }
-  function loop() {
+  function loop(ts) {
+    const now = ts || performance.now(), dt = Math.min(0.05, Math.max(0, (now - (st.lastLoop || now)) / 1000));
+    st.lastLoop = now;
     if (Render.Assets.rev !== st.assetRev) { st.assetRev = Render.Assets.rev; st.dirty = true; }   // 바닥 그림이 도착하면 다시 그림
+    // 장애물을 끌다가 화면 위·아래 끝에 닿으면 그쪽으로 저절로 넘어간다 (장애물도 같이)
+    const p = st.ptr;
+    if (p && !p.strip && p.moved && obsScroll() && st.edit && p.edit && st.lastView && p.lastPy !== undefined) {
+      const h = $('pCanvas').clientHeight, edge = h * 0.12, dir = p.lastPy > h - edge ? 1 : p.lastPy < edge ? -1 : 0;
+      if (dir) {
+        const [lo, hi] = scrollRange(st.lastView.H), before = st.obsTop;
+        st.obsTop = Math.max(lo, Math.min(hi, st.obsTop + dir * 14 * dt));
+        const d = st.obsTop - before;
+        if (d) { p.edit.y += d; st.edit.y = r2(st.edit.y + d); validateEdit(); }
+      }
+    }
     if (st.screen === 'pLobby' && st.dirty) {
       st.dirty = false;
       try { draw(); } catch (e) { console.error(e); }
@@ -426,10 +469,12 @@
   function bindCanvas() {
     const cv = $('pCanvas');
     const pt = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const stripTo = py => scrollTo(Render.minimapGeom(st.map, st.strip).toY(py));
     cv.addEventListener('pointerdown', e => {
       if (!st.T) draw();   // 첫 프레임 전에 눌러도 좌표 변환이 있도록
       const [px, py] = pt(e), m = [st.T.mx(px), st.T.my(py)];
       try { cv.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+      if (st.strip && px >= st.strip.x - 8) { st.ptr = { id: e.pointerId, strip: true }; stripTo(py); e.preventDefault(); return; }
       st.ptr = {
         id: e.pointerId, px, py, m, moved: false, startX: st.myX,
         edit: st.edit ? { x: st.edit.x, y: st.edit.y } : null,
@@ -440,7 +485,10 @@
     cv.addEventListener('pointermove', e => {
       const p = st.ptr;
       if (!p || p.id !== e.pointerId) return;
-      const [px, py] = pt(e), dx = px - p.px, dy = py - p.py;
+      const [px, py] = pt(e);
+      if (p.strip) { stripTo(py); return; }
+      const dx = px - p.px, dy = py - p.py;
+      p.lastPy = py;
       if (!p.moved && Math.hypot(dx, dy) < 7) return;
       p.moved = true;
       const k = st.T.k;
@@ -456,7 +504,7 @@
       const p = st.ptr;
       if (!p || p.id !== e.pointerId) return;
       st.ptr = null;
-      if (p.moved) return;
+      if (p.strip || p.moved) return;
       if (st.tab === 'drop') { setMyX(p.m[0]); return; }
       if (p.hit) { editExisting(p.hit); return; }
       if (!st.edit) {

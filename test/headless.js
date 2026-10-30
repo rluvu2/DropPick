@@ -79,7 +79,7 @@ for (let g = 0; g < N; g++) {
         let a;
         if (MODE === 'block') a = kind === 'tramp' ? 0 : (rnd() < 0.5 ? 1 : 11) * Math.PI / 12; // 가장 납작하게
         else a = kind === 'tramp' ? (Math.floor(rnd() * 7) - 3) * Math.PI / 12 : (1 + Math.floor(rnd() * 11)) * Math.PI / 12;
-        const o = { id: `o${i}_${k}`, owner: 'p' + i, kind, x: 1 + rnd() * 28, y: 4 + rnd() * 25, a: Sim.normAngle(kind, a) };
+        const o = { id: `o${i}_${k}`, owner: 'p' + i, kind, x: 1 + rnd() * 28, y: 3.5 + rnd() * (map.F - 6), a: Sim.normAngle(kind, a) };   // 코스 어디든
         if (Sim.validateObstacle(map, obstacles, o).ok) { obstacles.push(o); obsPlaced++; break; }
       }
     }

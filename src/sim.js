@@ -16,10 +16,10 @@
     FINISH_Y: 31,          // 레이저 결승선 y
     LABEL_BAND: 2.4,       // 결승선 아래 칸 이름 영역 높이
     VIEW: { x0: -0.6, y0: -3.2, x1: 30.6, y1: 34.0 },
-    ZONE: { y0: 3.8, y1: 29.0 },  // 유저 장애물 설치 가능 높이
-    CLEAR_MAP: 1.4,        // 유저 장애물 ↔ 맵 구조물 최소 간격
-    CLEAR_OBS: 1.5,        // 유저 장애물끼리 최소 간격
-    CLEAR_WALL: 1.5,       // 유저 장애물 ↔ 옆벽 최소 간격
+    // 유저 장애물(2026-10-30 사용자 요청: 맵 어디든, 가까이 둬도 됨): 출발선 아래 y0부터 결승선 finishGap 위까지 길 위 어디든
+    ZONE: { y0: 3.0, finishGap: 2.0 },
+    CLEAR_MAP: 0.12,       // 유저 장애물 ↔ 맵 구조물(벽 포함, 움직이는 부품은 휩쓰는 범위) — 겹치지만 않으면 됨
+    CLEAR_OBS: 0.05,       // 유저 장애물끼리 — 겹치지만 않으면 됨
     NAME_FONT: 1.0,        // 이름 글자 높이(m)
     NAME_MIN_FONT: 0.6,
     NAME_MAX_W: 4.6,       // 이름 최대 폭(m) — 넘으면 글자를 줄임
@@ -260,23 +260,30 @@
     return x;
   }
 
+  // 유저 장애물 놓기: 출발선 아래부터 결승선 바로 위까지 길 위 어디든(바위 속은 안 됨). 다른 장애물·맵 구조물 바로 옆도 되고
+  // 겹치지만 않으면 된다. 움직이는 부품(풍차·시계추·발판·원판)은 휩쓰는 범위와 안 겹치게. 벽돌은 눕히면 이름이 얹혀 멈춰서 15° 이상.
+  // 길을 막아도 판은 끝난다: 벽돌은 3번 맞으면 부서지고, 끼인 이름은 유저 장애물을 통과하고, 45초에 전부 부서진다.
+  const MOVING = { mill: 1, pendulum: 1, slider: 1, disc: 1 };
   function validateObstacle(map, list, o) {
     const def = o && OBS[o.kind];
     if (!def || ![o.x, o.y, o.a].every(Number.isFinite)) return { ok: false, reason: '잘못된 장애물이에요' };
     const g = obsGeom(o), ext = geomExtent(g);
-    if (ext[1] < C.ZONE.y0 || ext[3] > C.ZONE.y1) return { ok: false, reason: '점선 안(설치 구역)에 놓아주세요' };
-    if (ext[0] < C.CLEAR_WALL || ext[2] > map.W - C.CLEAR_WALL) return { ok: false, reason: '벽과 너무 가까워요' };
+    if (ext[1] < C.ZONE.y0) return { ok: false, reason: '출발선 바로 아래에는 놓을 수 없어요' };
+    if (ext[3] > map.F - C.ZONE.finishGap) return { ok: false, reason: '결승선 바로 위에는 놓을 수 없어요' };
+    if (!openAt(map, o.y).some(([a, b]) => o.x > a && o.x < b)) return { ok: false, reason: '길 위에 놓아주세요' };
     if (o.kind === 'block' && Math.abs(Math.sin(o.a)) < Math.sin(14 * Math.PI / 180))
       return { ok: false, reason: '벽돌은 15° 이상 기울여야 해요 (위에 얹혀 멈추는 걸 막기 위해)' };
     if (o.kind === 'tramp' && Math.abs(Math.sin(o.a)) > Math.sin(46 * Math.PI / 180))
       return { ok: false, reason: '트램펄린은 45°까지만 기울일 수 있어요' };
     for (const el of map.els) {
-      if (el.kind === 'wall') continue;
-      if (gDist(g, geomOf(el)) < C.CLEAR_MAP) return { ok: false, reason: '맵 구조물과 너무 가까워요' };
+      if (el.kind === 'rim') continue;   // 바깥 벽과 같은 자리 (바깥 벽으로 검사)
+      if (gDist(g, geomOf(el)) < C.CLEAR_MAP) {
+        return { ok: false, reason: el.kind === 'wall' ? '벽과 겹쳐요' : MOVING[el.kind] ? '움직이는 장치가 지나가는 자리예요' : '맵 구조물과 겹쳐요' };
+      }
     }
     for (const other of list) {
       if (other.id === o.id) continue;
-      if (gDist(g, obsGeom(other)) < C.CLEAR_OBS) return { ok: false, reason: '다른 장애물과 너무 가까워요' };
+      if (gDist(g, obsGeom(other)) < C.CLEAR_OBS) return { ok: false, reason: '다른 장애물과 겹쳐요' };
     }
     return { ok: true };
   }
@@ -769,9 +776,14 @@
       if (!this.suddenDone && this.t >= tm.sudden) {
         this.suddenDone = true;
         let broke = 0, busy = false;
-        for (const o of this.obs.values()) if (o.alive) { this._breakObs(o); broke++; }
-        // 긴 코스에서는 보통 다들 이미 장애물 구역을 지나갔다 → 화면 알림은 구역에 이름이 남아 있을 때만
-        for (const n of this.names.values()) if (!n.done && n.body && n.body.getWorldCenter().y < C.ZONE.y1 + 2) busy = true;
+        // 남은 이름 위아래 10m 안에 장애물이 있었을 때만 화면에 알린다 (다들 지나간 뒤라면 조용히)
+        const ys = [];
+        for (const n of this.names.values()) if (!n.done && n.body) ys.push(n.body.getWorldCenter().y);
+        for (const o of this.obs.values()) {
+          if (!o.alive) continue;
+          if (ys.some(y => Math.abs(y - o.y) < 10)) busy = true;
+          this._breakObs(o); broke++;
+        }
         this.events.push({ t: 'sudden', broke, busy });
       }
       if (!this.rushDone && this.t >= tm.rush) {

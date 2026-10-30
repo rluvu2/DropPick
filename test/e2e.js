@@ -182,7 +182,7 @@ async function inBatches(items, size, fn) {
     await p0.bringToFront();
     await p0.click('#pTabs [data-tab="obs"]');
     await tapBoard(p0, 6.3, 5.2);
-    check('핀 옆 설치 거절 사유', (await statusOf(p0)).text.includes('맵 구조물과 너무 가까워요'), (await statusOf(p0)).text);
+    check('핀과 겹치게 설치 거절 사유', (await statusOf(p0)).text.includes('맵 구조물과 겹쳐요'), (await statusOf(p0)).text);
     await p0.click('#pKinds [data-kind="block"]');
     await tapBoard(p0, 15, 6.6);
     await p0.click('#pRotL');   // 15° → 0°
@@ -194,7 +194,7 @@ async function inBatches(items, size, fn) {
     // 빈 곳 후보는 폰이 알고 있는 장애물 기준이라, 동시에 같은 곳을 노리면 호스트가 거절할 수 있다(그것도 확인).
     const pickFree = pg => pg.evaluate(() => {
       const e = PLB.st.edit || { kind: PLB.st.kind, a: PLB.st.kind === 'block' ? Math.PI / 12 : 0 };
-      const map = Sim.buildMap(), spots = [];
+      const map = PLB.st.map, spots = [];
       for (let y = 4.5; y <= 28.5; y += 0.5) for (let x = 2; x <= 28; x += 0.5) {
         if (Sim.validateObstacle(map, PLB.st.obstacles, { id: '__t', kind: e.kind, x, y, a: e.a }).ok) spots.push([x, y]);
       }
