@@ -445,7 +445,7 @@
     show('lookTools', !racing());
     renderPill();
     renderLookTools();
-    if (!racing()) { $('winFx').classList.add('hidden'); $('stageTitle').classList.remove('go'); }
+    if (!racing()) $('winFx').classList.add('hidden');
     $('openRoom').textContent = st.roomOpen ? '적용' : '방 열기';
     show('cancelEdit', st.roomOpen);
     show('joinbox', !st.roomOpen);
@@ -468,19 +468,9 @@
     $('winLabel').textContent = label;
     el.style.setProperty('--c', color);
     el.classList.remove('hidden');
-    $('stageTitle').classList.remove('go');   // 구간 제목과 겹치지 않게
     replay(el, 'go');
     clearTimeout(showWin.t);
     showWin.t = setTimeout(() => el.classList.add('hidden'), 3300);
-  }
-  function showStageTitle(i) {
-    if (!$('winFx').classList.contains('hidden')) return;   // 당첨 화면이 떠 있으면 구간 제목은 건너뛴다
-    const el = $('stageTitle'), s = st.map.stages[i];
-    el.innerHTML = '<small></small><span></span>';
-    el.firstChild.textContent = `${i + 1}구간`;
-    el.lastChild.textContent = s.name;
-    el.style.setProperty('--g', Render.themeOf(i).glow);
-    replay(el, 'go');
   }
   function hideOverlay() { $('overlay').classList.add('hidden'); }
 
@@ -921,24 +911,23 @@
     for (const n of st.game.names.values()) if (!n.done && n.body) out.push({ id: n.id, y: n.body.getWorldCenter().y });
     return out.sort((a, b) => b.y - a.y);
   }
-  // 카메라가 보는 무리가 새 구간에 들어서면 가운데에 구간 이름을 크게
+  // 카메라가 보는 무리가 새 구간에 들어서면 그 구간 색으로 화면이 살짝 번지고 효과음. 구간 이름·번호는 내부용이라 화면에 내지 않는다
   function checkStage(alive) {
     if (st.map.stages.length < 2 || !alive.length || st.focusY === null) return;
     const si = Sim.stageAt(st.map, st.focusY);
     if (si > st.stageSeen) {
       st.stageSeen = si;
-      showStageTitle(si);
       st.fx.screen(Render.themeOf(si).glow, 0.18);
       Render.Sound.play('stage');
     }
   }
   // 순위판: 도착한 이름(칸 이름과 함께) 다음에 아직 떨어지는 이름을 지금 위치 순서로. 전원을 보여준다
   function renderLiveRank(alive) {
-    const rows = [], multi = st.map.stages.length > 1;
+    const rows = [];
     st.results.forEach((r, i) => rows.push({ rk: i + 1, name: r.name, color: r.color, note: r.label, cls: st.special.has(r.label) ? 'done win' : 'done' }));
     alive.forEach((a, i) => {
       const p = byId(a.id);
-      rows.push({ rk: st.results.length + i + 1, name: p ? p.name : '?', color: p ? p.color : Render.COL.chrome, note: multi ? `${Sim.stageAt(st.map, a.y) + 1}구간` : '', cls: i === 0 ? 'lead' : '' });
+      rows.push({ rk: st.results.length + i + 1, name: p ? p.name : '?', color: p ? p.color : Render.COL.chrome, note: '', cls: i === 0 ? 'lead' : '' });
     });
     const ul = $('liveRank'), frag = document.createDocumentFragment();
     ul.classList.toggle('compact', rows.length > 18);
@@ -960,7 +949,7 @@
     const done = st.results.length, F = st.map.F;
     alive.forEach((a, i) => {
       const p = byId(a.id);
-      if (p && p.conn) send(p, { t: 'prog', p: r3(Math.max(0, Math.min(1, a.y / F))), r: done + i + 1, s: Sim.stageAt(st.map, a.y), n: st.parts.length });
+      if (p && p.conn) send(p, { t: 'prog', p: r3(Math.max(0, Math.min(1, a.y / F))), r: done + i + 1, n: st.parts.length });
     });
   }
 

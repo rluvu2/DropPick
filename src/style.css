@@ -224,20 +224,6 @@ textarea:focus, input:focus { border-color: var(--amber); outline: none; }
 .live-rank.compact .rk { font-size: clamp(11px, 1.45vh, 13px); }
 .live-rank.compact .st { font-size: 11px; }
 
-/* 구간에 들어설 때 가운데에 크게 */
-.stage-title { position: absolute; left: calc((100% - var(--hud-w, 0px)) / 2); top: 34%; transform: translate(-50%, -50%); pointer-events: none; text-align: center; opacity: 0; z-index: 3; white-space: nowrap; }
-.stage-title small { display: block; font-weight: 700; font-size: 18px; letter-spacing: .35em; color: var(--g, var(--teal)); text-shadow: 0 0 12px var(--g, var(--teal)); margin-bottom: 8px; }
-.stage-title span { font-family: var(--font-display); font-size: clamp(40px, 6.4vw, 96px); line-height: 1; color: #fff; text-shadow: 0 0 14px var(--g, var(--teal)), 0 0 46px var(--g, var(--teal)); }
-/* 투명도·이동만 움직인다 (filter를 움직이면 큰 빛 글자를 매 프레임 다시 그려서 끊김) */
-.stage-title.go { will-change: transform, opacity; animation: stage-title 2.3s cubic-bezier(.2, .8, .2, 1) forwards; }
-.win-fx.go { will-change: transform, opacity; }
-@keyframes stage-title {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(1.25); }
-  14% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  78% { opacity: 1; transform: translate(-50%, -50%) scale(.98); }
-  100% { opacity: 0; transform: translate(-50%, -56%) scale(.96); }
-}
-
 /* 당첨 칸에 들어간 순간: 화면 가운데에 이름과 칸을 크게 */
 .win-fx { position: absolute; top: 0; bottom: 0; left: 0; right: var(--hud-w, 0px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; pointer-events: none; z-index: 4; text-align: center; padding: 0 24px; isolation: isolate; }
 /* 글자 뒤를 어둡게 받쳐서 보드 위에서도 잘 읽히게 */
@@ -245,7 +231,8 @@ textarea:focus, input:focus { border-color: var(--amber); outline: none; }
 .win-fx .win-tag { font-family: var(--font-display); font-size: 26px; color: var(--ink); background: var(--amber); border-radius: 999px; padding: 4px 22px; box-shadow: 0 0 34px rgba(255, 181, 71, .85); }
 .win-fx b { font-family: var(--font-display); font-weight: 400; font-size: clamp(56px, 10vw, 150px); line-height: 1.02; color: var(--c, #fff); text-shadow: 0 0 22px var(--c, #fff), 0 0 64px var(--c, #fff), 0 5px 0 rgba(0, 0, 0, .55); max-width: 100%; overflow-wrap: anywhere; }
 .win-fx .win-label { font-family: var(--font-display); font-size: clamp(28px, 4.2vw, 64px); color: var(--amber); text-shadow: 0 0 20px rgba(255, 181, 71, .85), 0 3px 0 rgba(0, 0, 0, .5); }
-.win-fx.go { animation: win-in 3.2s cubic-bezier(.2, .9, .2, 1) forwards; }
+/* 투명도·이동만 움직인다 (filter를 움직이면 큰 빛 글자를 매 프레임 다시 그려서 끊김) */
+.win-fx.go { will-change: transform, opacity; animation: win-in 3.2s cubic-bezier(.2, .9, .2, 1) forwards; }
 @keyframes win-in {
   0% { opacity: 0; transform: scale(1.8); }
   9% { opacity: 1; transform: scale(1); }
@@ -283,8 +270,6 @@ textarea:focus, input:focus { border-color: var(--amber); outline: none; }
   max-width: calc(100% - 40px); text-align: center;
 }
 .banner.on { opacity: 1; transform: translate(-50%, 0); }
-/* 구간 진입: 잉크 바탕 + 틸 빛 */
-.banner.stage { background: var(--ink-2); color: var(--text); border: 1px solid var(--teal); box-shadow: 0 0 24px rgba(79, 209, 197, .35); font-family: var(--font-display); font-weight: 400; font-size: 22px; }
 /* 당첨 칸: 앰버 */
 .banner.win { background: var(--amber); color: var(--ink); box-shadow: 0 0 36px rgba(255, 181, 71, .65); font-family: var(--font-display); font-weight: 400; font-size: 28px; padding: 12px 26px; }
 
@@ -361,7 +346,6 @@ textarea:focus, input:focus { border-color: var(--amber); outline: none; }
 .p-race { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 10px; background: var(--ink-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
 .race-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .race-top b { font-family: var(--font-display); font-weight: 400; font-size: 34px; line-height: 1; }
-.race-top span { color: var(--muted); font-size: 14px; text-align: right; }
 .race-bar { height: 10px; border-radius: 999px; background: var(--ink-3); overflow: hidden; }
 .race-bar i { display: block; height: 100%; width: 0; background: var(--c, var(--amber)); border-radius: inherit; transition: width .9s linear; }
 

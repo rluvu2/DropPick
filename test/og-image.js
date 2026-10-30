@@ -27,7 +27,7 @@ const NAMES = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'names
     d.innerHTML = '<h1 class="title" style="font-size:76px;text-shadow:0 4px 18px rgba(0,0,0,.6)">핀볼 사다리</h1>' +
       '<p style="margin:14px 0 0;font-size:24px;font-weight:700;color:#F3EEFF;text-shadow:0 2px 10px rgba(0,0,0,.8)">이름이 글자 모양 그대로 떨어지는 사다리타기</p>';
     document.body.appendChild(d);
-    for (const id of ['banner', 'stageTitle', 'winFx', 'hud']) document.getElementById(id).style.display = 'none';
+    for (const id of ['banner', 'winFx', 'hud']) document.getElementById(id).style.display = 'none';
   });
   await page.waitForTimeout(120);
   const out = path.join(__dirname, '..', 'assets', 'og.jpg');

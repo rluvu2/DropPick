@@ -33,7 +33,7 @@
   const stageTheme = (map, y) => themeOf(map.stages.length > 1 ? Sim.stageAt(map, y) : 0);
   // 폰 대기실에서 긴 코스는 1구간 바로 아래를 잘라 결승선을 붙여 보여준다 (PC는 전체 지도)
   const LOBBY = { cut: { y0: 30.9, y1: 32.1 }, finish: 32.3 };
-  const cutText = map => `이 아래로 ${map.stages.length - 1}구간, ${Math.round(map.F - 31)}m 더 내려가요`;
+  const cutText = map => `이 아래로 ${Math.round(map.F - 31)}m 더 내려가요`;   // 구간(이름·수)은 내부용이라 화면에 내지 않는다
   // 가장 흔한 칸(보통 '꽝')이 아닌 칸 = 당첨. 모두 한 칸씩이면 당첨 구분 없음
   function specialLabels(labels) {
     const count = {};
@@ -355,7 +355,7 @@
       drawSides(ctx, T, v, map, clock);
     }
 
-    // 2. 플레이필드: 구간별 바탕(그림) + 구간 경계와 제목
+    // 2. 플레이필드: 구간별 바탕(그림). 구간 이름·경계는 내부용이라 그리지 않는다
     const top = Math.max(-16, v.y0 - 1), floor = Math.max(F, FB) + C.LABEL_BAND;
     let anyImg = false;
     map.stages.forEach((s, i) => {
@@ -373,26 +373,17 @@
         for (let x = 1.5; x < WW; x += 1.5) ctx.fillRect(T.x(x) - ds / 2, T.y(y) - ds / 2, ds, ds);
       }
     }
+    // 구간 그림이 바뀌는 곳은 위아래 두 구간 색의 중간색으로 어둡게 번지게 (딱 잘린 이음매가 선처럼 보이지 않게)
+    map.stages.forEach((s, i) => {
+      if (i === 0 || !vis(s.y0 - 3, s.y0 + 3) || (sc.cut && s.y0 > sc.cut.y0)) return;
+      const y = T.y(s.y0), h = 3 * k, mid = mix(themeOf(i - 1).bg, themeOf(i).bg, 0.5);
+      const g = ctx.createLinearGradient(0, y - h, 0, y + h);
+      g.addColorStop(0, alpha(mid, 0)); g.addColorStop(0.5, alpha(mid, 0.8)); g.addColorStop(1, alpha(mid, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(T.x(0), y - h, WW * k, 2 * h);
+    });
     // 길 바깥 바위 (긴 코스)
     if (map.path) drawRocks(ctx, T, map, vy0, vy1);
-    if (map.stages.length > 1) {
-      map.stages.forEach((s, i) => {
-        if (i === 0 || !vis(s.y0 - 1, s.y0 + 4) || (sc.cut && s.y0 > sc.cut.y0)) return;
-        const th = themeOf(i), open = Sim.openAt ? Sim.openAt(map, s.y0 + 1.5)[0] : [0, W];
-        ctx.strokeStyle = alpha(th.glow, 0.45);
-        ctx.lineWidth = Math.max(1, 0.06 * k);
-        ctx.setLineDash([0.5 * k, 0.4 * k]);
-        const lineOpen = Sim.openAt ? Sim.openAt(map, s.y0)[0] : [0, W];
-        ctx.beginPath(); ctx.moveTo(T.x(lineOpen[0] + 0.3), T.y(s.y0)); ctx.lineTo(T.x(lineOpen[1] - 0.3), T.y(s.y0)); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.font = `${Math.max(14, 1.7 * k)}px ${STACK()}`;
-        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = alpha(th.glow, 0.3);
-        ctx.fillText(String(i + 1).padStart(2, '0') + '  ' + s.name, T.x(open[0] + 1.1), T.y(s.y0 + 0.7));
-        ctx.globalCompositeOperation = 'source-over';
-      });
-    }
 
     // 3. 장애물을 놓을 수 있는 곳: 출발선 아래 이 점선부터 결승선 바로 위까지 길 위 어디든
     if (sc.showZone && vis(C.ZONE.y0 - 1, C.ZONE.y0 + 2)) {
@@ -1121,7 +1112,6 @@
         if (b <= a) return;
         c.fillStyle = themeOf(map.stages.length > 1 ? i : 0).bg2;
         c.fillRect(0, Y(a), g.w, (b - a) * g.sy);
-        if (i > 0) { c.fillStyle = alpha(themeOf(i).glow, 0.6); c.fillRect(0, Y(s.y0), g.w, 1); }
       });
       if (map.path) {
         c.fillStyle = 'rgba(6,4,13,0.92)';
@@ -1145,18 +1135,6 @@
       }
       c.fillStyle = COL.laser;
       c.fillRect(X(map.finishX || 0), Y(map.F) - 1, C.W * g.sx, 2.5);
-      if (g.w >= 100 && map.stages.length > 1) {
-        // 대기실처럼 미니맵이 넓으면 구간 이름을 띠 위쪽에
-        c.font = '700 10px "IBM Plex Sans KR", sans-serif';
-        c.textAlign = 'left'; c.textBaseline = 'top';
-        map.stages.forEach((s, i) => {
-          const y = Y(Math.max(s.y0, g.y0)) + 3, th = themeOf(i);
-          c.fillStyle = 'rgba(6,4,13,0.6)';
-          c.fillRect(2, y - 1, c.measureText(`${i + 1} ${s.name}`).width + 6, 13);
-          c.fillStyle = lighten(th.glow, 0.35);
-          c.fillText(`${i + 1} ${s.name}`, 5, y);
-        });
-      }
     }
     ctx.drawImage(mm.cv, g.x - 4, g.top - 4, g.w + 8, g.h + 8);
     const X = x => g.x + x * g.sx, Y = y => g.top + (y - g.y0) * g.sy;

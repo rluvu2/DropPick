@@ -49,7 +49,6 @@
         <button id="tourBtn" class="icon-btn" type="button">코스 둘러보기</button>
         <span id="lookHint" class="look-hint">휠이나 끌기로 코스를 둘러보고, 미니맵을 누르면 그곳으로 가요</span>
       </div>
-      <div id="stageTitle" class="stage-title" aria-hidden="true"></div>
       <div id="winFx" class="win-fx hidden" role="status">
         <span class="win-tag">당첨</span>
         <b id="winName"></b>
@@ -86,8 +85,8 @@
         <div class="field">
           <span class="field-label">코스</span>
           <div id="coursePick" class="course-pick" role="radiogroup" aria-label="코스">
-            <button type="button" data-course="long" role="radio" aria-checked="true"><b>긴 코스</b><span>6구간, 한 판 40초쯤</span></button>
-            <button type="button" data-course="short" role="radio" aria-checked="false"><b>짧은 코스</b><span>1구간, 한 판 20초쯤</span></button>
+            <button type="button" data-course="long" role="radio" aria-checked="true"><b>긴 코스</b><span>한 판 40초쯤</span></button>
+            <button type="button" data-course="short" role="radio" aria-checked="false"><b>짧은 코스</b><span>한 판 20초쯤</span></button>
           </div>
         </div>
         <div class="field">
@@ -226,7 +225,7 @@
         <span id="pRunMe" class="me-chip"></span>
         <h1 class="title small">큰 화면을 보세요</h1>
         <div id="pRace" class="p-race hidden">
-          <div class="race-top"><b id="pRunRank">-</b><span id="pRunStage"></span></div>
+          <div class="race-top"><b id="pRunRank">-</b></div>
           <div class="race-bar" aria-hidden="true"><i id="pRunBar"></i></div>
         </div>
         <p id="pRunMsg" class="hint">이름이 떨어지는 중이에요</p>

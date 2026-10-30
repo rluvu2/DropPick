@@ -151,11 +151,9 @@
       case 'prog': {
         // 1초마다 오는 내 순위·진행도
         if (st.screen !== 'pRun' || st.result) break;
-        const stage = st.map.stages[m.s];
         $('pRace').classList.remove('hidden');
         $('pRace').style.setProperty('--c', st.me.color || Render.COL.amber);
         $('pRunRank').textContent = m.r + '등';
-        $('pRunStage').textContent = st.map.stages.length > 1 && stage ? `${m.s + 1}구간 ${stage.name}` : '';
         $('pRunBar').style.width = Math.round(Math.max(0, Math.min(1, m.p)) * 100) + '%';
         $('pRunMsg').textContent = `${m.n}명 중 지금 ${m.r}등으로 떨어지는 중이에요`;
         break;
