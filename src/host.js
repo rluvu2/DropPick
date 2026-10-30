@@ -532,6 +532,7 @@
     $('leftover').textContent = left.length ? '배정되지 않은 칸: ' + left.join(', ') : '';
     show('leftover', left.length > 0);
     $('overlay').classList.remove('hidden');
+    ul.scrollTop = 0; ul.parentElement.scrollTop = 0;   // 지난 판에 내려 둔 스크롤이 남지 않게 (당첨이 맨 위)
   }
   function resultText() {
     const lines = ['핀볼 사다리 결과'];

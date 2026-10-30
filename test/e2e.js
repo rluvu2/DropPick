@@ -293,23 +293,27 @@ async function inBatches(items, size, fn) {
     phones.pop();
     await sleep(400);
     // 5. 폰 없는 사람 추가 + 보드에서 끌기 (이 사람은 다음 게임에 그대로 참가)
+    //    14명이 몰린 가운데에 둬서, 쌓을 자리가 꽉 차 옆으로 비켜 그려진 이름도 끌리는지 본다.
+    //    끌기는 그려진 자리 기준이라 놓은 곳 = 그려진 x + 끈 거리 (고른 x와는 다를 수 있음)
     await host.fill('#addName', '폰없음');
     await host.click('#addForm button');
     await sleep(500);
-    const localX0 = await host.evaluate(() => PLB.st.players.find(p => p.local).x);
+    await host.evaluate(() => { PLB.st.players.find(p => p.local).x = 15; });
+    await sleep(1000);   // 카메라가 새 배치에 맞춰 멈출 때까지
     const drag = await host.evaluate(() => {
       const p = PLB.st.players.find(q => q.local);
       const pos = Sim.layoutStart(PLB.st.players.filter(q => q.name).map(q => ({ id: q.id, x: q.x, w: q.w })))[p.id];
       const r = document.getElementById('board').getBoundingClientRect();
-      return [r.left + PLB.st.T.x(pos.x), r.top + PLB.st.T.y(pos.y), PLB.st.T.k];
+      return { px: r.left + PLB.st.T.x(pos.x), py: r.top + PLB.st.T.y(pos.y), k: PLB.st.T.k, chosenX: p.x, shownX: pos.x };
     });
-    await host.mouse.move(drag[0], drag[1]);
+    await host.mouse.move(drag.px, drag.py);
     await host.mouse.down();
-    const dir = localX0 < 15 ? 1 : -1;   // 벽 쪽으로 끌면 막히므로 가운데 쪽으로
-    await host.mouse.move(drag[0] + dir * 4 * drag[2], drag[1], { steps: 6 });
+    const dir = drag.shownX < 15 ? 1 : -1;   // 벽 쪽으로 끌면 막히므로 가운데 쪽으로
+    await host.mouse.move(drag.px + dir * 4 * drag.k, drag.py, { steps: 6 });
     await host.mouse.up();
     const localX1 = await host.evaluate(() => PLB.st.players.find(p => p.local).x);
-    check('폰 없는 사람 추가 + 보드에서 끌어 위치 변경', Math.abs(localX1 - localX0) > 2, { localX0, localX1 });
+    check('폰 없는 사람 추가 + 보드에서 끌어 위치 변경 (옆으로 비켜 그려진 이름)', Math.abs(localX1 - (drag.shownX + dir * 4)) < 0.5,
+      { chosenX: drag.chosenX, shownX: +drag.shownX.toFixed(2), localX1 });
   }
   const NP = phones.length;
   const NALL = await host.evaluate(() => PLB.st.players.filter(p => p.name).length);   // 폰 없는 사람 포함
@@ -383,6 +387,8 @@ async function inBatches(items, size, fn) {
   if (!REAL) report.fakePeer = await host.evaluate(() => window.__fpStats);
   report.errors = bag.errors;
   report.resourceErrors = bag.resource.length;
+  report.peerServerErrors = bag.network || [];
+  if (report.peerServerErrors.length) log('PeerJS 서버 일시 오류 (앱이 다시 연결함)', report.peerServerErrors.length, JSON.stringify(report.peerServerErrors.slice(0, 3)));
   check('콘솔 에러 없음', bag.errors.length === 0, bag.errors.slice(0, 8));
   report.ok = report.checks.every(c => c.ok);
   fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 2));
