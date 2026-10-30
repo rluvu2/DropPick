@@ -743,10 +743,17 @@
     if (p.left - b.left > w * 0.45) return { right: w - (p.left - b.left) + 12, bottom: 0 };
     return { right: 0, bottom: Math.max(0, h - (p.top - b.top) + 8) };
   }
+  // 둘러보기 도구 막대가 가리는 띠(넓은 화면은 아래, 좁은 화면은 위) — 코스 끝까지 내려가도 칸 이름이 그 밑에 숨지 않게
+  function toolsCover(h) {
+    const t = $('lookTools').getBoundingClientRect(), b = $('board').getBoundingClientRect();
+    if (!t.height) return { top: 0, bottom: 0 };
+    const y0 = t.top - b.top, y1 = t.bottom - b.top;
+    return y0 + y1 > h ? { top: 0, bottom: h - y0 + 6 } : { top: y1 + 6, bottom: 0 };
+  }
   // 목표 화면: 보드 폭이 안전 영역(미니맵 오른쪽 ~ 설정 창 왼쪽)에 맞게. 코스가 화면보다 조금만 길면(짧은 코스) 다 들어오게
   function lookTarget(map, w, h, top, now, cover) {
     const left = st.mmRect.x + st.mmRect.w + 16, right = Math.max(left + 200, w - cover.right - 10);
-    const vTop = 0, vBot = Math.max(120, h - cover.bottom), sw = right - left, FULL = C.W + 1.2;
+    const vTop = cover.top || 0, vBot = Math.max(vTop + 120, h - cover.bottom), sw = right - left, FULL = C.W + 1.2;
     const yTop = Math.min(C.VIEW.y0, top - 1.6), yEnd = map.F + C.LABEL_BAND + 0.8, courseH = yEnd - yTop;
     const visFull = (vBot - vTop) * FULL / sw;
     if (look.zoomW === null) look.zoomW = courseH <= visFull * 1.35 ? FULL * Math.max(1, courseH / visFull) : FULL;
@@ -800,7 +807,8 @@
     const top = names.reduce((m, n) => Math.min(m, n.y), C.START_Y);
     const cover = panelCover(w, h);
     st.mmRect = lobbyMini(map, w, Math.max(160, h - cover.bottom));   // 아래에서 올라온 창(좁은 화면)에 가리지 않게
-    const v = lookTarget(map, w, h, top, now, cover);
+    const tools = toolsCover(h);
+    const v = lookTarget(map, w, h, top, now, { right: cover.right, top: tools.top, bottom: Math.max(cover.bottom, tools.bottom) });
     // 굴리기는 부드럽게 따라가고, 둘러보기는 경로를 그대로
     const cur = look.cur || (look.cur = { cx: v.cx, cy: v.cy, zoomW: v.zoomW });
     const a = v.tour ? 1 : 1 - Math.exp(-dt * 11);
