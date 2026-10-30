@@ -373,20 +373,23 @@
         for (let x = 1.5; x < W; x += 1.5) ctx.fillRect(T.x(x) - ds / 2, T.y(y) - ds / 2, ds, ds);
       }
     }
+    // 길 바깥 바위 (긴 코스)
+    if (map.path) drawRocks(ctx, T, map, vy0, vy1);
     if (map.stages.length > 1) {
       map.stages.forEach((s, i) => {
         if (i === 0 || !vis(s.y0 - 1, s.y0 + 4) || (sc.cut && s.y0 > sc.cut.y0)) return;
-        const th = themeOf(i);
+        const th = themeOf(i), open = Sim.openAt ? Sim.openAt(map, s.y0 + 1.5)[0] : [0, W];
         ctx.strokeStyle = alpha(th.glow, 0.45);
         ctx.lineWidth = Math.max(1, 0.06 * k);
         ctx.setLineDash([0.5 * k, 0.4 * k]);
-        ctx.beginPath(); ctx.moveTo(T.x(0.3), T.y(s.y0)); ctx.lineTo(T.x(W - 0.3), T.y(s.y0)); ctx.stroke();
+        const lineOpen = Sim.openAt ? Sim.openAt(map, s.y0)[0] : [0, W];
+        ctx.beginPath(); ctx.moveTo(T.x(lineOpen[0] + 0.3), T.y(s.y0)); ctx.lineTo(T.x(lineOpen[1] - 0.3), T.y(s.y0)); ctx.stroke();
         ctx.setLineDash([]);
         ctx.font = `${Math.max(14, 1.7 * k)}px ${STACK()}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'top';
         ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = alpha(th.glow, 0.3);
-        ctx.fillText(String(i + 1).padStart(2, '0') + '  ' + s.name, T.x(1.1), T.y(s.y0 + 0.7));
+        ctx.fillText(String(i + 1).padStart(2, '0') + '  ' + s.name, T.x(open[0] + 1.1), T.y(s.y0 + 0.7));
         ctx.globalCompositeOperation = 'source-over';
       });
     }
@@ -413,7 +416,7 @@
       ctx.strokeStyle = 'rgba(255,107,122,0.11)';
       ctx.lineCap = 'round';
       for (const el of map.els) {
-        if (el.kind === 'wall' || !elVisible(el, vy0, vy1)) continue;
+        if (el.kind === 'wall' || el.kind === 'rim' || !elVisible(el, vy0, vy1)) continue;
         if (el.a) {
           ctx.lineWidth = (el.r + C.CLEAR_MAP) * 2 * k;
           ctx.beginPath(); ctx.moveTo(T.x(el.a[0]), T.y(el.a[1])); ctx.lineTo(T.x(el.b[0]), T.y(el.b[1])); ctx.stroke();
@@ -438,8 +441,8 @@
     const lit = sc.fx ? sc.fx.lit : null;
     for (let i = 0; i < map.els.length; i++) {
       const el = map.els[i];
-      if ((el.kind !== 'wall' && el.kind !== 'deflector') || !elVisible(el, vy0, vy1)) continue;
-      if (el.kind === 'wall') drawWall(ctx, T, el, map, vy0, vy1);
+      if ((el.kind !== 'wall' && el.kind !== 'deflector' && el.kind !== 'rim') || !elVisible(el, vy0, vy1)) continue;
+      if (el.kind === 'wall' || el.kind === 'rim') drawWall(ctx, T, el, map, vy0, vy1);
       else neon(ctx, T, el.a, el.b, el.r, stageTheme(map, (el.a[1] + el.b[1]) / 2).glow);
     }
     for (let i = 0; i < map.els.length; i++) {
@@ -601,9 +604,38 @@
     ctx.fillStyle = '#FFF4D6';
     ctx.beginPath(); ctx.arc(x, y, r * 0.45, 0, TAU); ctx.fill();
   }
+  // 바위: 길 바깥과 섬. 어두운 바탕 + 옆판 그림을 옅게(월드에 고정해 이어 붙임) + 가장자리 안쪽 그림자. 네온 벽은 그 위에 그린다
+  function drawRocks(ctx, T, map, vy0, vy1) {
+    const k = T.k, img = Assets.img.side;
+    for (const poly of map.path.rocks) {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const p of poly) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+      if (y1 < vy0 || y0 > vy1) continue;
+      ctx.save();
+      ctx.beginPath();
+      poly.forEach((p, i) => { if (i) ctx.lineTo(T.x(p[0]), T.y(p[1])); else ctx.moveTo(T.x(p[0]), T.y(p[1])); });
+      ctx.closePath();
+      ctx.fillStyle = '#08060F';
+      ctx.fill();
+      ctx.clip();
+      if (img && img.width) {
+        const tw = 6 * k, th = img.height * tw / img.width, ya = T.y(Math.max(y0, vy0)), yb = T.y(Math.min(y1, vy1));
+        const sy = ya - (((ya - T.y(0)) % th) + th) % th;
+        ctx.globalAlpha = 0.42;
+        for (let x = T.x(x0); x < T.x(x1); x += tw) for (let y = sy; y < yb; y += th) ctx.drawImage(img, x, y, tw, th);
+        ctx.globalAlpha = 1;
+      }
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1.8 * k;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
   // 옆벽은 구간마다 네온 색이 바뀐다
   function drawWall(ctx, T, el, map, y0, y1) {
-    if (el.a[0] !== el.b[0] || map.stages.length < 2) { neon(ctx, T, el.a, el.b, el.r, themeOf(0).glow); return; }
+    if (el.frame && map.path) return;
+    if (el.a[0] !== el.b[0] || map.stages.length < 2) { neon(ctx, T, el.a, el.b, el.r, stageTheme(map, (el.a[1] + el.b[1]) / 2).glow); return; }
     const lo = Math.min(el.a[1], el.b[1]), hi = Math.max(el.a[1], el.b[1]);
     map.stages.forEach((s, i) => {
       const a = Math.max(lo, s.y0, y0), b = Math.min(hi, s.y1, y1);
@@ -1029,8 +1061,17 @@
         c.fillRect(0, Y(a), g.w, (b - a) * g.s);
         if (i > 0) { c.fillStyle = alpha(themeOf(i).glow, 0.6); c.fillRect(0, Y(s.y0), g.w, 1); }
       });
+      if (map.path) {
+        c.fillStyle = 'rgba(6,4,13,0.92)';
+        for (const poly of map.path.rocks) {
+          c.beginPath();
+          poly.forEach((p, i) => { const px = X(Math.max(-0.2, Math.min(C.W + 0.2, p[0]))), py = Y(Math.max(g.y0, p[1])); if (i) c.lineTo(px, py); else c.moveTo(px, py); });
+          c.closePath(); c.fill();
+        }
+      }
       c.lineWidth = 1.2; c.lineCap = 'round';
       for (const el of map.els) {
+        if (el.frame && map.path) continue;
         const col = stageTheme(map, el.c ? el.c[1] : (el.a[1] + el.b[1]) / 2).glow;
         c.strokeStyle = lighten(col, 0.25); c.fillStyle = lighten(col, 0.25);
         if (el.kind === 'wall' && el.a[1] === el.b[1]) continue;

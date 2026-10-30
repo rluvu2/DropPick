@@ -1238,7 +1238,7 @@
     showPanel();
     if (st.roomOpen) scheduleLobby();
     requestAnimationFrame(frame);
-    root.PLB = { st, parseLabels, lobbyMsg: () => lobbyFor({}, lobbyBase(), true) };   // 테스트·디버깅용
+    root.PLB = { st, look, parseLabels, lobbyMsg: () => lobbyFor({}, lobbyBase(), true) };   // 테스트·디버깅용
   }
 
   root.Host = { start, parseLabels };

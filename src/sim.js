@@ -87,8 +87,9 @@
     const slider = (x, y, len, tilt, amp, period, phase) => els.push({ kind: 'slider', c: [x, y], len, thick: 0.45, tilt, amp, period, phase: phase || 0 });
     const disc = (x, y, r, speed) => els.push({ kind: 'disc', c: [x, y], r, speed });
 
-    wall([0, -16], [0, F + 6]);
-    wall([W, -16], [W, F + 6]);
+    // 바깥 벽. 긴 코스는 이 안에 구불구불한 길을 새기므로 바깥 벽은 물리 안전망으로만 두고 그리지 않는다(frame)
+    wall([0, -16], [0, F + 6]); els[els.length - 1].frame = true;
+    wall([W, -16], [W, F + 6]); els[els.length - 1].frame = true;
     wall([0, -16], [W, -16]);
     wall([0, F + 5], [W, F + 5]);
 
@@ -114,46 +115,91 @@
     pin(5.5, 27.0);
     pin(24.5, 27.0);
 
+    let path = null;
     if (id === 'long') {
-      // 이름은 최대 4.6m 길이의 막대라서 구슬보다 길이 넓어야 한다: 통로·틈은 6m 이상, 경사는 20° 안팎,
-      // 움직이는 부품은 벽에서 6m 이상 떨어뜨려(벽에 눌려 끼지 않게) 둔다.
-      // 2구간: 지그재그 슬로프 — 27° 긴 경사판 둘. 끝에는 9.5m 틈.
-      // 앞 경사판에서 날아온 이름이 벽에 맞고 다음 경사판 꼭대기 구석에 쌓이면 미끄러지는 이름과 맞부딪혀 막힌다
-      // → 구석을 가파른 모서리판(50°)으로 메워서, 벽에 맞고 떨어진 이름도 미끄러지는 방향으로 출발하게 한다.
-      defl([0, 34.5], [20.5, 44.9], 0.3);
-      defl([W, 49.5], [W - 20.5, 59.9], 0.3);
-      defl([W, 47.3], [W - 2.9, 50.95], 0.3);
-      // 3구간: 범퍼 정원 — 엇갈린 범퍼 네 줄, 벽 쪽 턱
+      // 이름은 최대 4.6m 길이의 막대라서 구슬보다 길이 넓어야 한다: 통로·틈은 6m 이상(길은 10m 안팎), 이름이 얹힐 수 있는
+      // 면은 25° 이상(대부분 40° 이상), 움직이는 부품은 벽에서 6m 이상 떨어뜨린다(벽에 눌려 끼지 않게).
+      // 길 모양(path): 왼쪽(L)·오른쪽(R) 벽을 y가 커지는 꺾은선으로 정하고, 그 바깥은 바위. 섬(islands)은 길 가운데 바위.
+      // 2구간: 지그재그 슬로프 — 1구간 아래 깔때기(40°)로 모아서, 폭 10m 길이 오른쪽 아래(55°)로 갔다가 왼쪽 아래(38~43°)로 꺾인다.
+      //   꺾이는 바깥 구석은 둥글게(가운데 59°) — 구석에 쌓이면 미끄러지는 이름과 맞부딪혀 막히기 때문(이전 지그재그에서 확인).
+      // 3구간: 범퍼 정원 — 길이 넓은 방으로 열린다(오른쪽 위는 비스듬한 바위 천장). 엇갈린 범퍼 네 줄, 벽 쪽 턱
       [7, 15, 23].forEach(x => bumper(x, 69, 0.9));
       [11, 19].forEach(x => bumper(x, 74.5, 0.9));
       [7, 15, 23].forEach(x => bumper(x, 80, 0.9));
-      [11, 19].forEach(x => bumper(x, 85.5, 0.9));
+      [11, 19].forEach(x => bumper(x, 84.5, 0.9));
       defl([0, 71.5], [2.6, 73.0]);
       defl([W, 71.5], [W - 2.6, 73.0]);
-      defl([0, 82.5], [2.6, 84.0]);
+      defl([0, 82.5], [2.6, 84.0]);   // 범퍼와 4.8m 넘게 띄운다 (79.5로 올렸더니 범퍼(7,80) 사이에 이름이 끼었음)
       defl([W, 82.5], [W - 2.6, 84.0]);
-      // 4구간: 시계추 골짜기 — 가운데 큰 시계추, 아래로 좌우로 오가는 기울어진 발판 둘
+      // 4구간: 시계추 골짜기 — 양쪽 벽이 V자로 모여 가운데 큰 시계추 쪽으로 보낸다(휘두르는 범위에서 6m 이상), 아래로 좌우로 오가는 발판 둘
       pin(15, 89.5, 0.6);
       pendulum(15, 89.5, 9.0, 0.62, 3.6, 0);
       slider(15, 103, 6.5, 0.26, 5.5, 4.2, 0);
       slider(15, 107.5, 6.5, -0.26, 5.5, 4.2, Math.PI);
-      // 5구간: 회전 원판 — 반대로 도는 원판 둘 + 가운데 범퍼
+      // 5구간: 회전 원판 — 반대로 도는 원판 둘. 그 아래 다이아몬드 섬이 길을 좌우 두 갈래(각 8m)로 나눴다가 합친다
       disc(8.5, 113.5, 2.4, 2.4);
       disc(W - 8.5, 113.5, 2.4, -2.4);
-      bumper(15, 120, 1.1);
-      defl([0, 116.5], [2.8, 118.0]);
-      defl([W, 116.5], [W - 2.8, 118.0]);
-      // 6구간: 레이저 커튼 — 벽에서 밀어내는 경사판 + 마지막 핀 (1구간 아래쪽과 같은 배치)
-      defl([0, 124.5], [4.8, 126.7]);
-      defl([W, 124.5], [W - 4.8, 126.7]);
-      [10.5, 19.5].forEach(x => pin(x, 127.5));
-      pin(15, 128.7);
+      // 6구간: 레이저 커튼 — 두 갈래가 합쳐진 뒤 마지막 핀
+      [10.5, 19.5].forEach(x => pin(x, 128.2));
       [5.5, 24.5].forEach(x => pin(x, 130.5));
       [9, 15, 21].forEach(x => pin(x, 133.0));
+      path = {
+        L: [[0, -16], [0, 29.5], [10, 38], [17, 48], [4, 60], [0, 63], [0, 87.5], [6, 93], [0, 99], [0, 117], [3, 120.5], [3, 124.5], [0, 128], [0, F + 6]],
+        R: [[W, -16], [W, 29.5], [20, 38], [25.5, 45.5], [27, 48.5], [25.5, 51], [14, 60], [W, 64.5], [W, 87.5], [W - 6, 93], [W, 99], [W, 117], [W - 3, 120.5], [W - 3, 124.5], [W, 128], [W, F + 6]],
+        islands: [[[15, 119], [19, 123], [15, 127], [11, 123]]],
+      };
+      // 길의 벽: 바깥 벽과 겹치는 부분은 그리기만(rim), 나머지는 물리 벽
+      for (const [poly, fx] of [[path.L, 0], [path.R, W]]) {
+        for (let i = 1; i < poly.length; i++) {
+          const a = poly[i - 1], b = poly[i];
+          if (a[0] === fx && b[0] === fx) els.push({ kind: 'rim', a, b, r: 0.3 });
+          else wall(a, b);
+        }
+      }
+      for (const isl of path.islands) for (let i = 0; i < isl.length; i++) wall(isl[i], isl[(i + 1) % isl.length]);
+      // 화면용 바위: 길 바깥(왼쪽·오른쪽)과 섬
+      path.rocks = [
+        [[-1.5, path.L[0][1]], ...path.L, [-1.5, path.L[path.L.length - 1][1]]],
+        [[W + 1.5, path.R[0][1]], ...path.R, [W + 1.5, path.R[path.R.length - 1][1]]],
+        ...path.islands,
+      ];
     }
     const stages = id === 'long' ? STAGES_LONG.map(s => Object.assign({}, s, { y1: Math.min(s.y1, F + 6) }))
       : [{ name: '핀볼 숲', y0: -16, y1: F + 6 }];
-    return { id, W, F, els, stages, timers: COURSES[id].timers, view: { x0: -0.6, y0: -3.2, x1: W + 0.6, y1: F + 3 } };
+    return { id, W, F, els, stages, path, timers: COURSES[id].timers, view: { x0: -0.6, y0: -3.2, x1: W + 0.6, y1: F + 3 } };
+  }
+
+  // ---------- 길 모양 ----------
+  // 꺾은선(y 증가 순)에서 높이 y의 x. y가 범위 밖이면 끝 값
+  function polyX(poly, y) {
+    if (y <= poly[0][1]) return poly[0][0];
+    for (let i = 1; i < poly.length; i++) {
+      const a = poly[i - 1], b = poly[i];
+      if (y <= b[1]) return a[0] + (b[0] - a[0]) * (y - a[1]) / Math.max(1e-9, b[1] - a[1]);
+    }
+    return poly[poly.length - 1][0];
+  }
+  // 볼록 다각형(섬)과 수평선 y가 만나는 x 구간
+  function islandSpan(pts, y) {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      if (a[1] === b[1] || (a[1] - y) * (b[1] - y) > 0) continue;
+      const x = a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]);
+      lo = Math.min(lo, x); hi = Math.max(hi, x);
+    }
+    return lo < hi ? [lo, hi] : null;
+  }
+  // 높이 y에서 이름이 있을 수 있는 x 구간들 (벽 중심선 기준). 길 모양이 없으면 보드 전체
+  function openAt(map, y) {
+    if (!map.path) return [[0, map.W || C.W]];
+    let iv = [[polyX(map.path.L, y), polyX(map.path.R, y)]];
+    for (const isl of map.path.islands) {
+      const sp = islandSpan(isl, y);
+      if (!sp) continue;
+      iv = iv.flatMap(([a, b]) => (sp[1] <= a || sp[0] >= b ? [[a, b]] : [[a, sp[0]], [sp[1], b]].filter(([p, q]) => q > p)));
+    }
+    return iv;
   }
 
   // 움직이는 맵 요소의 시각 t 자세 (물리와 대기실 그림이 같이 쓴다, 결정적)
@@ -627,9 +673,15 @@
       for (const n of this.names.values()) {
         if (n.done || this._phasing(n)) continue;
         const c = n.body.getWorldCenter();
-        if (c.x < -0.5 || c.x > C.W + 0.5) {
-          const b = n.body, p = b.getPosition(), half = Math.min(C.W / 2 - 0.5, n.w / 2 + 0.6);
-          const nx = Math.max(half, Math.min(C.W - half, c.x));
+        const iv = openAt(this.map, c.y);
+        if (!iv.some(([a, b]) => c.x >= a - 0.5 && c.x <= b + 0.5)) {
+          // 길 밖(보드 밖이나 바위 속)으로 나갔다 → 가장 가까운 길 안으로 (짧은 코스는 예전과 같음: 보드 [0, W])
+          const b = n.body, p = b.getPosition();
+          let nx = C.W / 2, bestD = Infinity;
+          for (const [a0, a1] of iv) {
+            const half = Math.min((a1 - a0) / 2, n.w / 2 + 0.6), x = Math.max(a0 + half, Math.min(a1 - half, c.x));
+            if (Math.abs(x - c.x) < bestD) { bestD = Math.abs(x - c.x); nx = x; }
+          }
           b.setTransform({ x: p.x + nx - c.x, y: p.y }, b.getAngle());
           b.setLinearVelocity({ x: 0, y: Math.max(1, b.getLinearVelocity().y) });
           n.prevX = nx;
@@ -684,7 +736,8 @@
       const b = n.body, c = b.getWorldCenter();
       n.stalls += 1;
       n.phaseUntil = this.t + (n.stalls === 1 ? 0.9 : 1.6);
-      const toCenter = c.x < C.W / 2 ? 1 : -1;
+      const iv = openAt(this.map, c.y), mine = iv.find(([a, b]) => c.x >= a && c.x <= b) || iv[0];
+      const toCenter = c.x < (mine[0] + mine[1]) / 2 ? 1 : -1;   // 지금 있는 길의 가운데 쪽으로
       b.setLinearVelocity({ x: toCenter * 1.5, y: 4.5 });
       b.setAngularVelocity(0);
       this.events.push({ t: 'unstick', id: n.id, level: 9, x: c.x, y: c.y });
@@ -696,6 +749,7 @@
       for (const dy of [-1.8, -3.0, -1.0]) {
         for (const dx of [0, 1.6, -1.6, 3.2, -3.2]) {
           const x = Math.max(hw + 0.3, Math.min(C.W - hw - 0.3, c.x + dx)), y = Math.max(-1, c.y + dy);
+          if (!openAt(this.map, y).some(([a, b]) => x - hw >= a + 0.3 && x + hw <= b - 0.3)) continue;   // 바위 속은 안 됨
           let free = true;
           this.world.queryAABB(new planck.AABB({ x: x - hw, y: y - hh }, { x: x + hw, y: y + hh }), f => {
             if (f.getBody() === n.body) return true;
@@ -755,7 +809,7 @@
   }
 
   return {
-    C, OBS, COURSES, makeRng, buildMap, moverPose, stageAt, validateObstacle, normAngle, obsGeom, layoutStart, clampDropX,
+    C, OBS, COURSES, makeRng, buildMap, moverPose, stageAt, openAt, validateObstacle, normAngle, obsGeom, layoutStart, clampDropX,
     convexHull, simplifyConvex, cleanPoly, polyArea, Segments, Game,
   };
 });
