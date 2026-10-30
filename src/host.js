@@ -868,6 +868,7 @@
     try { tick(dt, now); } catch (e) { console.error(e); }
     // 성능 점검용: 이 프레임에 우리 코드가 쓴 시간 (40ms 넘으면 기록)
     const ms = performance.now() - t0, s = st.stats;
+    if (st.phase === 'running') { s.tickSum = (s.tickSum || 0) + ms; s.tickN = (s.tickN || 0) + 1; }
     if (ms > 40 && (s.slowTicks = s.slowTicks || []).length < 20) s.slowTicks.push([Math.round(ms), st.phase, st.game ? +st.game.t.toFixed(2) : 0]);
     requestAnimationFrame(frame);
   }

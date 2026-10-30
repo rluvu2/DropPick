@@ -37,7 +37,7 @@ const N = +process.argv[2] || 30, GAMES = +process.argv[3] || 2;
     const r = await host.evaluate(() => {
       const all = window.__ft.slice(1), run = all.filter(x => x[1] === 'running'); window.__long = all.filter(x => x[0] > 60).slice(0, 14); const ft = run.map(x => x[0]).sort((a, b) => a - b), q = p => ft[Math.min(ft.length - 1, Math.floor(ft.length * p))];
       const s = PLB.st.stats;
-      return { gameSec: +PLB.st.game.t.toFixed(1), results: PLB.st.results.length, frames: ft.length, frameMsP50: +q(0.5).toFixed(1), frameMsP90: +q(0.9).toFixed(1), frameMsMax: +ft[ft.length - 1].toFixed(0), stepMs: +(s.stepMs / Math.max(1, s.steps)).toFixed(2), slowFrames: s.slowFrames, long: window.__long.map(x => x.map(v => typeof v === 'number' ? +v.toFixed(1) : v)) };
+      return { gameSec: +PLB.st.game.t.toFixed(1), results: PLB.st.results.length, frames: ft.length, frameMsP50: +q(0.5).toFixed(1), frameMsP90: +q(0.9).toFixed(1), frameMsMax: +ft[ft.length - 1].toFixed(0), stepMs: +(s.stepMs / Math.max(1, s.steps)).toFixed(2), tickMs: +((s.tickSum || 0) / Math.max(1, s.tickN || 0)).toFixed(2), slowFrames: s.slowFrames, long: window.__long.map(x => x.map(v => typeof v === 'number' ? +v.toFixed(1) : v)) };
     });
     r.wallSec = +((Date.now() - w0) / 1000).toFixed(1);
     r.speed = +(r.gameSec / Math.max(0.1, r.wallSec - 3)).toFixed(2);   // 카운트다운 3초 제외, 1이면 실시간
